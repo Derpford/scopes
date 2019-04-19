@@ -18,6 +18,7 @@
 #include "expander.hpp"
 #include "types.hpp"
 #include "gen_llvm.hpp"
+#include "gen_firm.hpp"
 #include "compiler_flags.hpp"
 
 #include "scopes/scopes.h"
@@ -284,7 +285,7 @@ skip_regular_load:
 compile_stage:
     if (fn->get_type() == stage_func_type) {
         typedef sc_valueref_raises_t (*StageFuncType)();
-        StageFuncType fptr = (StageFuncType)SCOPES_GET_RESULT(compile(fn, compile_flags))->value;
+        StageFuncType fptr = (StageFuncType)SCOPES_GET_RESULT(compile_firm(fn, compile_flags))->value;
         auto result = fptr();
         if (!result.ok) {
             SCOPES_RETURN_ERROR(result.except);
@@ -313,7 +314,7 @@ compile_stage:
 #endif
 
     typedef sc_void_raises_t (*MainFuncType)();
-    MainFuncType fptr = (MainFuncType)SCOPES_GET_RESULT(compile(fn, flags))->value;
+    MainFuncType fptr = (MainFuncType)SCOPES_GET_RESULT(compile_firm(fn, flags))->value;
     {
         auto result = fptr();
         if (!result.ok) {

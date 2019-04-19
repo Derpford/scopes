@@ -20,6 +20,7 @@
 #include "lexerparser.hpp"
 #include "expander.hpp"
 #include "gen_llvm.hpp"
+#include "gen_firm.hpp"
 #include "gen_spirv.hpp"
 #include "anchor.hpp"
 #include "boot.hpp"
@@ -266,7 +267,7 @@ sc_valueref_raises_t sc_compile(sc_valueref_t srcl, uint64_t flags) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(ConstPointerRef);
     auto result = SCOPES_C_GET_RESULT(extract_function_constant(srcl));
-    return convert_result(compile(result, flags));
+    return convert_result(compile_firm(result, flags));
 }
 
 sc_string_raises_t sc_compile_spirv(sc_symbol_t target, sc_valueref_t srcl, uint64_t flags) {

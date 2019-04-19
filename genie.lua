@@ -138,6 +138,7 @@ project "scopesrt"
         "src/platform_abi.cpp",
         "src/gen_spirv.cpp",
         "src/gen_llvm.cpp",
+        "src/gen_firm.cpp",
         "src/expander.cpp",
         "src/globals.cpp",
         "src/hash.cpp",
@@ -157,6 +158,8 @@ project "scopesrt"
         "SPIRV-Cross/spirv_cfg.cpp",
     }
     includedirs {
+        "cparser/libfirm/include/libfirm",
+        "cparser/libfirm/build/gen/include/libfirm",
         "external/linenoise-ng/include",
         "external",
         "SPIRV-Tools/include",

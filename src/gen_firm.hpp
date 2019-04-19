@@ -4,8 +4,8 @@
     See LICENSE.md for details.
 */
 
-#ifndef SCOPES_GEN_LLVM_HPP
-#define SCOPES_GEN_LLVM_HPP
+#ifndef SCOPES_GEN_FIRM_HPP
+#define SCOPES_GEN_FIRM_HPP
 
 #include "result.hpp"
 #include "valueref.inc"
@@ -19,9 +19,9 @@ struct String;
 struct ConstPointer;
 struct Scope;
 
-SCOPES_RESULT(void) compile_object(const String *path, Scope *scope, uint64_t flags);
-//SCOPES_RESULT(ConstPointerRef) compile(const FunctionRef &fn, uint64_t flags);
+//SCOPES_RESULT(void) firm_compile_object(const String *path, Scope *scope, uint64_t flags);
+SCOPES_RESULT(ConstPointerRef) compile_firm(const FunctionRef &fn, uint64_t flags);
 
 } // namespace scopes
 
-#endif // SCOPES_GEN_LLVM_HPP
+#endif // SCOPES_GEN_FIRM_HPP
