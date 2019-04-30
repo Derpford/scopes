@@ -18,6 +18,8 @@ syntax: regexp
 ^SPIRV-Tools
 ^SPIRV-Cross
 ^cparser/
+^tcc/
+^libjit/
 ^libffi
 ^scopes$
 ^testing/myscopes$

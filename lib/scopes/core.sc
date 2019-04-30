@@ -3913,14 +3913,17 @@ spice-quote
     inline compile (func flags...)
         sc_compile func (parse-compile-flags flags...)
 
+    inline compile-c (table flags...)
+        sc_compile_c table (parse-compile-flags flags...)
+
     inline compile-glsl (target func flags...)
         sc_compile_glsl target func (parse-compile-flags flags...)
 
     inline compile-spirv (target func flags...)
         sc_compile_spirv target func (parse-compile-flags flags...)
 
-    inline compile-object (func table flags...)
-        sc_compile_object func table (parse-compile-flags flags...)
+    inline compile-object (path table flags...)
+        sc_compile_object path table (parse-compile-flags flags...)
 
 inline convert-assert-args (args cond msg)
     if ((countof args) == 2) msg
@@ -5060,8 +5063,8 @@ let _static-compile-glsl = (gen-static-compile-shader sc_compile_glsl)
 let _static-compile-spirv = (gen-static-compile-shader sc_compile_spirv)
 
 spice-quote
-    inline static-compile (func flags...)
-        _static-compile func (parse-compile-flags flags...)
+    inline static-compile-c (func flags...)
+        _static-compile-c func (parse-compile-flags flags...)
     inline static-compile-glsl (target func flags...)
         _static-compile-glsl target func (parse-compile-flags flags...)
     inline static-compile-spirv (target func flags...)

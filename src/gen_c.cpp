@@ -4,10 +4,9 @@
     See LICENSE.md for details.
 */
 
-#include "gen_llvm.hpp"
+#include "gen_c.hpp"
 #include "source_file.hpp"
 #include "types.hpp"
-#include "platform_abi.hpp"
 #include "anchor.hpp"
 #include "error.hpp"
 #include "execution.hpp"
@@ -29,98 +28,49 @@
 #endif
 #include <libgen.h>
 
-#include <llvm-c/Core.h>
-//#include <llvm-c/ExecutionEngine.h>
-#include <llvm-c/Analysis.h>
-#include <llvm-c/Transforms/PassManagerBuilder.h>
-#include <llvm-c/Disassembler.h>
-#include <llvm-c/Support.h>
-#include <llvm-c/DebugInfo.h>
-
-#include "llvm/IR/Module.h"
-//#include "llvm/IR/DebugInfoMetadata.h"
-//#include "llvm/IR/DIBuilder.h"
-//#include "llvm/ExecutionEngine/SectionMemoryManager.h"
-#include "llvm/ExecutionEngine/ExecutionEngine.h"
-#include "llvm/ExecutionEngine/JITEventListener.h"
-#include "llvm/Object/SymbolSize.h"
-//#include "llvm/Support/Timer.h"
-//#include "llvm/Support/raw_os_ostream.h"
-
 #include "dyn_cast.inc"
+
+#include <deque>
+#include <string>
 
 #pragma GCC diagnostic ignored "-Wvla-extension"
 
 namespace scopes {
 
-#define SCOPES_GEN_TARGET "IR"
+#define SCOPES_GEN_TARGET "C"
 #define SCOPES_LLVM_CACHE_FUNCTIONS 1
 
 //------------------------------------------------------------------------------
 // IL->LLVM IR GENERATOR
 //------------------------------------------------------------------------------
 
-static void build_and_run_opt_passes(LLVMModuleRef module, int opt_level) {
-    LLVMPassManagerBuilderRef passBuilder;
-
-    passBuilder = LLVMPassManagerBuilderCreate();
-    LLVMPassManagerBuilderSetOptLevel(passBuilder, opt_level);
-    LLVMPassManagerBuilderSetSizeLevel(passBuilder, 0);
-    if (opt_level >= 2) {
-        LLVMPassManagerBuilderUseInlinerWithThreshold(passBuilder, 225);
-    }
-
-    LLVMPassManagerRef functionPasses =
-      LLVMCreateFunctionPassManagerForModule(module);
-    LLVMPassManagerRef modulePasses =
-      LLVMCreatePassManager();
-    //LLVMAddAnalysisPasses(LLVMGetExecutionEngineTargetMachine(ee), functionPasses);
-
-    LLVMPassManagerBuilderPopulateFunctionPassManager(passBuilder,
-                                                      functionPasses);
-    LLVMPassManagerBuilderPopulateModulePassManager(passBuilder, modulePasses);
-
-    LLVMPassManagerBuilderDispose(passBuilder);
-
-    LLVMInitializeFunctionPassManager(functionPasses);
-    for (LLVMValueRef value = LLVMGetFirstFunction(module);
-         value; value = LLVMGetNextFunction(value))
-      LLVMRunFunctionPassManager(functionPasses, value);
-    LLVMFinalizeFunctionPassManager(functionPasses);
-
-    LLVMRunPassManager(modulePasses, module);
-
-    LLVMDisposePassManager(functionPasses);
-    LLVMDisposePassManager(modulePasses);
-}
-
 static const double deg2rad = 0.017453292519943295;
 static const double rad2deg = 57.29577951308232;
 
-struct LLVMIRGenerator {
+struct CGenerator {
     enum Intrinsic {
-        llvm_sin_f32,
-        llvm_sin_f64,
-        llvm_cos_f32,
-        llvm_cos_f64,
-        llvm_sqrt_f32,
-        llvm_sqrt_f64,
-        llvm_fabs_f32,
-        llvm_fabs_f64,
-        llvm_trunc_f32,
-        llvm_trunc_f64,
-        llvm_floor_f32,
-        llvm_floor_f64,
-        llvm_pow_f32,
-        llvm_pow_f64,
-        llvm_exp_f32,
-        llvm_exp_f64,
-        llvm_log_f32,
-        llvm_log_f64,
-        llvm_exp2_f32,
-        llvm_exp2_f64,
-        llvm_log2_f32,
-        llvm_log2_f64,
+        c_sin_f32,
+        c_sin_f64,
+        c_cos_f32,
+        c_cos_f64,
+        c_sqrt_f32,
+        c_sqrt_f64,
+        c_fabs_f32,
+        c_fabs_f64,
+        c_trunc_f32,
+        c_trunc_f64,
+        c_floor_f32,
+        c_floor_f64,
+        c_pow_f32,
+        c_pow_f64,
+        c_exp_f32,
+        c_exp_f64,
+        c_log_f32,
+        c_log_f64,
+        c_exp2_f32,
+        c_exp2_f64,
+        c_log2_f32,
+        c_log2_f64,
         custom_fsign_f32,
         custom_fsign_f64,
         custom_radians_f32,
@@ -130,78 +80,95 @@ struct LLVMIRGenerator {
         NumIntrinsics,
     };
 
-#if 0
-    struct HashFuncLabelPair {
-        size_t operator ()(const std::pair<LLVMValueRef, Label *> &value) const {
-            return
-                hash2(std::hash<LLVMValueRef>()(value.first),
-                    std::hash<Label *>()(value.second));
-        }
-    };
+    typedef uint64_t Id;
+    typedef std::vector<Id> Ids;
 
-
-    typedef std::pair<LLVMValueRef, Parameter *> ParamKey;
-    struct HashFuncParamPair {
-        size_t operator ()(const ParamKey &value) const {
-            return
-                hash2(std::hash<LLVMValueRef>()(value.first),
-                    std::hash<Parameter *>()(value.second));
-        }
-    };
-
-    std::unordered_map<Label *, LLVMValueRef> label2func;
-    std::unordered_map< std::pair<LLVMValueRef, Label *>,
-        LLVMBasicBlockRef, HashFuncLabelPair> label2bb;
-    std::vector< std::pair<Label *, Label *> > bb_label_todo;
-
-    std::unordered_map< ParamKey, LLVMValueRef, HashFuncParamPair> param2value;
-
-
-    Label::UserMap user_map;
-#endif
-
-    typedef std::vector<LLVMValueRef> LLVMValueRefs;
-    typedef std::vector<LLVMTypeRef> LLVMTypeRefs;
-
-    std::unordered_map<SourceFile *, LLVMMetadataRef> file2value;
-    std::unordered_map<void *, LLVMValueRef> ptr2global;
-    std::unordered_map<ValueIndex, LLVMValueRef, ValueIndex::Hash> ref2value;
-    std::unordered_map<Function *, LLVMMetadataRef> func2md;
+    std::unordered_map<void *, Id> ptr2global;
+    std::unordered_map<ValueIndex, Id, ValueIndex::Hash> ref2value;
+    std::unordered_map<Function *, Id> func2func;
     std::unordered_map<Function *, Symbol> func_export_table;
-    std::unordered_map<Global *, LLVMValueRef> global2global;
+    std::unordered_map<Global *, Id> global2global;
     std::deque<FunctionRef> function_todo;
     static Types type_todo;
-    static std::unordered_map<const Type *, LLVMTypeRef> type_cache;
-    static std::unordered_map<Function *, LLVMModuleRef> func_cache;
-    static std::unordered_map<Global *, LLVMModuleRef> global_cache;
+    static Id next_id;
+    static std::unordered_map<const Type *, Id> type_cache;
+    static std::unordered_map<Function *, Id> func_cache;
+    static std::unordered_map<Global *, Id> global_cache;
+    static std::unordered_map<Id, std::string> ref_cache;
+    static std::unordered_map<Id, std::string> definition_cache;
+    #define SCOPES_MAX_TEMP_SIZE 256
+    static char temp[SCOPES_MAX_TEMP_SIZE];
 
-    LLVMModuleRef module;
-    LLVMBuilderRef builder;
-    LLVMDIBuilderRef di_builder;
+    static Id new_id() {
+        auto id = next_id++;
+        snprintf(temp, SCOPES_MAX_TEMP_SIZE, "_%ull", id);
+        ref_cache.insert({id, temp});
+        return id;
+    }
 
-    static LLVMTypeRef voidT;
-    static LLVMTypeRef i1T;
-    static LLVMTypeRef i8T;
-    static LLVMTypeRef i16T;
-    static LLVMTypeRef i32T;
-    static LLVMTypeRef i64T;
-    static LLVMTypeRef f32T;
-    static LLVMTypeRef f32x2T;
-    static LLVMTypeRef f64T;
-    static LLVMTypeRef rawstringT;
-    static LLVMTypeRef noneT;
-    static LLVMValueRef noneV;
-    static LLVMValueRef falseV;
-    static LLVMValueRef trueV;
-    static LLVMAttributeRef attr_byval;
-    static LLVMAttributeRef attr_sret;
-    static LLVMAttributeRef attr_nonnull;
-    LLVMValueRef intrinsics[NumIntrinsics];
+    static Id new_id(const std::string &name) {
+        auto id = next_id++;
+        ref_cache.insert({id, name});
+        return id;
+    }
+
+    static Id define_type(Id id, std::string &definition) {
+        definition_cache.insert({id, definition});
+        return id;
+    }
+
+    static Id c_pointer_type(Id T) {
+        auto Tstr = ref_cache.at(T);
+        auto id = new_id();
+        auto idstr = ref_cache.at(id);
+        snprintf(temp, SCOPES_MAX_TEMP_SIZE, "typedef %s *%s;",
+            ts.c_str(), idstr.c_str());
+        define_type(id, temp);
+        return id;
+    }
+
+    static Id c_int_type(int width) {
+        snprintf(temp, SCOPES_MAX_TEMP_SIZE, "int%i_t", width);
+        return new_id(temp);
+    }
+
+    static Id c_real_type(int width) {
+        if (width == 32) {
+            return new_id("float");
+        } else if (width == 64) {
+            return new_id("double");
+        } else {
+            snprintf(temp, SCOPES_MAX_TEMP_SIZE, "real%i_t", width);
+            return new_id(temp);
+        }
+    }
+
+    std::vector<char> buffer_decl;
+    std::vector<char> buffer_impl;
+
+    static Id voidT;
+    static Id i1T;
+    static Id i8T;
+    static Id i16T;
+    static Id i32T;
+    static Id i64T;
+    static Id f32T;
+    static Id f32x2T;
+    static Id f64T;
+    static Id rawstringT;
+    static Id noneT;
+    static Id noneV;
+    static Id falseV;
+    static Id trueV;
+    static Id attr_byval;
+    static Id attr_sret;
+    static Id attr_nonnull;
+    Id intrinsics[NumIntrinsics];
 
     bool use_debug_info;
     bool generate_object;
     FunctionRef active_function;
-    std::vector<LLVMValueRef> generated_symbols;
+    std::vector<Id> generated_symbols;
 
     static const Type *arguments_to_tuple(const Type *T) {
         if (isa<ArgumentsType>(T)) {
@@ -232,8 +199,8 @@ struct LLVMIRGenerator {
     }
 
     struct TryInfo {
-        LLVMBasicBlockRef bb_except;
-        LLVMValueRefs except_values;
+        Id bb_except;
+        Ids except_values;
 
         TryInfo() :
             bb_except(nullptr)
@@ -249,8 +216,8 @@ struct LLVMIRGenerator {
 
     struct LoopInfo {
         LoopLabelRef loop;
-        LLVMBasicBlockRef bb_loop;
-        LLVMValueRefs repeat_values;
+        Id bb_loop;
+        Ids repeat_values;
 
         LoopInfo() :
             bb_loop(nullptr)
@@ -261,8 +228,8 @@ struct LLVMIRGenerator {
 
     struct LabelInfo {
         LabelRef label;
-        LLVMBasicBlockRef bb_merge;
-        LLVMValueRefs merge_values;
+        Id bb_merge;
+        Ids merge_values;
 
         LabelInfo() :
             bb_merge(nullptr)
@@ -271,106 +238,28 @@ struct LLVMIRGenerator {
 
     std::vector<LabelInfo> label_info_stack;
 
-    template<unsigned N>
-    static LLVMAttributeRef get_attribute(const char (&s)[N]) {
-        unsigned kind = LLVMGetEnumAttributeKindForName(s, N - 1);
-        assert(kind);
-        return LLVMCreateEnumAttribute(LLVMGetGlobalContext(), kind, 0);
-    }
-
-    LLVMIRGenerator() :
+    CGenerator() :
         //active_function(nullptr),
         //active_function_value(nullptr),
         use_debug_info(true),
         generate_object(false) {
         static_init();
         for (int i = 0; i < NumIntrinsics; ++i) {
-            intrinsics[i] = nullptr;
+            intrinsics[i] = 0;
         }
     }
 
-    LLVMMetadataRef source_file_to_scope(SourceFile *sf) {
-        assert(use_debug_info);
-
-        auto it = file2value.find(sf);
-        if (it != file2value.end())
-            return it->second;
-
-        char *dn = strdup(sf->path.name()->data);
-        char *bn = strdup(dn);
-
-        char *fname = basename(bn);
-        char *dname = dirname(dn);
-
-        LLVMMetadataRef result = LLVMDIBuilderCreateFile(di_builder,
-            fname, strlen(fname), dname, strlen(dname));
-
-        free(dn);
-        free(bn);
-
-        file2value.insert({ sf, result });
-
-        return result;
-    }
-
-    LLVMMetadataRef function_to_subprogram(const FunctionRef &l) {
-        assert(use_debug_info);
-
-        auto it = func2md.find(l.unref());
-        if (it != func2md.end())
-            return it->second;
-
-        const Anchor *anchor = l.anchor();
-
-        LLVMMetadataRef difile = source_file_to_scope(anchor->file);
-
-        /*
-        LLVMMetadataRef subroutinevalues[] = {
-            nullptr
-        };
-        */
-        LLVMMetadataRef disrt = LLVMDIBuilderCreateSubroutineType(di_builder,
-            difile, nullptr, 0, LLVMDIFlagZero);
-
-        auto name = l->name.name();
-        LLVMMetadataRef difunc = LLVMDIBuilderCreateFunction(
-            di_builder, difile, name->data, name->count,
-            // todo: insert actual linkage name here
-            name->data, name->count,
-            difile, anchor->lineno, disrt, false, true,
-            anchor->lineno, LLVMDIFlagZero, false);
-
-        func2md.insert({ l.unref(), difunc });
-        return difunc;
-    }
-
-    static void diag_handler(LLVMDiagnosticInfoRef info, void *) {
-        const char *severity = "Message";
-        switch(LLVMGetDiagInfoSeverity(info)) {
-        case LLVMDSError: severity = "Error"; break;
-        case LLVMDSWarning: severity = "Warning"; break;
-        case LLVMDSRemark: return;// severity = "Remark"; break;
-        case LLVMDSNote: return;//severity = "Note"; break;
-        default: break;
-        }
-
-        char *str = LLVMGetDiagInfoDescription(info);
-        fprintf(stderr, "LLVM %s: %s\n", severity, str);
-        LLVMDisposeMessage(str);
-        //LLVMDiagnosticSeverity LLVMGetDiagInfoSeverity(LLVMDiagnosticInfoRef DI);
-    }
-
-    LLVMValueRef get_intrinsic(Intrinsic op) {
+    Id get_intrinsic(Intrinsic op) {
         if (!intrinsics[op]) {
-            LLVMValueRef result = nullptr;
+            Id result = 0;
             switch(op) {
-#define LLVM_INTRINSIC_IMPL(ENUMVAL, RETTYPE, STRNAME, ...) \
+#define C_INTRINSIC_IMPL(ENUMVAL, RETTYPE, STRNAME, ...) \
     case ENUMVAL: { \
         LLVMTypeRef argtypes[] = {__VA_ARGS__}; \
         result = LLVMAddFunction(module, STRNAME, LLVMFunctionType(RETTYPE, argtypes, sizeof(argtypes) / sizeof(LLVMTypeRef), false)); \
     } break;
 
-#define LLVM_INTRINSIC_IMPL_BEGIN(ENUMVAL, RETTYPE, STRNAME, ...) \
+#define C_INTRINSIC_IMPL_BEGIN(ENUMVAL, RETTYPE, STRNAME, ...) \
     case ENUMVAL: { \
         LLVMTypeRef argtypes[] = { __VA_ARGS__ }; \
         result = LLVMAddFunction(module, STRNAME, \
@@ -380,34 +269,34 @@ struct LLVMIRGenerator {
         auto oldbb = LLVMGetInsertBlock(builder); \
         position_builder_at_end(bb);
 
-#define LLVM_INTRINSIC_IMPL_END() \
+#define C_INTRINSIC_IMPL_END() \
         position_builder_at_end(oldbb); \
     } break;
 
-            LLVM_INTRINSIC_IMPL(llvm_sin_f32, f32T, "llvm.sin.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_sin_f64, f64T, "llvm.sin.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_cos_f32, f32T, "llvm.cos.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_cos_f64, f64T, "llvm.cos.f64", f64T)
+            C_INTRINSIC_IMPL(c_sin_f32, f32T, "llvm.sin.f32", f32T)
+            C_INTRINSIC_IMPL(c_sin_f64, f64T, "llvm.sin.f64", f64T)
+            C_INTRINSIC_IMPL(c_cos_f32, f32T, "llvm.cos.f32", f32T)
+            C_INTRINSIC_IMPL(c_cos_f64, f64T, "llvm.cos.f64", f64T)
 
-            LLVM_INTRINSIC_IMPL(llvm_sqrt_f32, f32T, "llvm.sqrt.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_sqrt_f64, f64T, "llvm.sqrt.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_fabs_f32, f32T, "llvm.fabs.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_fabs_f64, f64T, "llvm.fabs.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_trunc_f32, f32T, "llvm.trunc.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_trunc_f64, f64T, "llvm.trunc.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_floor_f32, f32T, "llvm.floor.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_floor_f64, f64T, "llvm.floor.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_pow_f32, f32T, "llvm.pow.f32", f32T, f32T)
-            LLVM_INTRINSIC_IMPL(llvm_pow_f64, f64T, "llvm.pow.f64", f64T, f64T)
-            LLVM_INTRINSIC_IMPL(llvm_exp_f32, f32T, "llvm.exp.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_exp_f64, f64T, "llvm.exp.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_log_f32, f32T, "llvm.log.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_log_f64, f64T, "llvm.log.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_exp2_f32, f32T, "llvm.exp2.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_exp2_f64, f64T, "llvm.exp2.f64", f64T)
-            LLVM_INTRINSIC_IMPL(llvm_log2_f32, f32T, "llvm.log2.f32", f32T)
-            LLVM_INTRINSIC_IMPL(llvm_log2_f64, f64T, "llvm.log2.f64", f64T)
-            LLVM_INTRINSIC_IMPL_BEGIN(custom_fsign_f32, f32T, "custom.fsign.f32", f32T)
+            C_INTRINSIC_IMPL(c_sqrt_f32, f32T, "llvm.sqrt.f32", f32T)
+            C_INTRINSIC_IMPL(c_sqrt_f64, f64T, "llvm.sqrt.f64", f64T)
+            C_INTRINSIC_IMPL(c_fabs_f32, f32T, "llvm.fabs.f32", f32T)
+            C_INTRINSIC_IMPL(c_fabs_f64, f64T, "llvm.fabs.f64", f64T)
+            C_INTRINSIC_IMPL(c_trunc_f32, f32T, "llvm.trunc.f32", f32T)
+            C_INTRINSIC_IMPL(c_trunc_f64, f64T, "llvm.trunc.f64", f64T)
+            C_INTRINSIC_IMPL(c_floor_f32, f32T, "llvm.floor.f32", f32T)
+            C_INTRINSIC_IMPL(c_floor_f64, f64T, "llvm.floor.f64", f64T)
+            C_INTRINSIC_IMPL(c_pow_f32, f32T, "llvm.pow.f32", f32T, f32T)
+            C_INTRINSIC_IMPL(c_pow_f64, f64T, "llvm.pow.f64", f64T, f64T)
+            C_INTRINSIC_IMPL(c_exp_f32, f32T, "llvm.exp.f32", f32T)
+            C_INTRINSIC_IMPL(c_exp_f64, f64T, "llvm.exp.f64", f64T)
+            C_INTRINSIC_IMPL(c_log_f32, f32T, "llvm.log.f32", f32T)
+            C_INTRINSIC_IMPL(c_log_f64, f64T, "llvm.log.f64", f64T)
+            C_INTRINSIC_IMPL(c_exp2_f32, f32T, "llvm.exp2.f32", f32T)
+            C_INTRINSIC_IMPL(c_exp2_f64, f64T, "llvm.exp2.f64", f64T)
+            C_INTRINSIC_IMPL(c_log2_f32, f32T, "llvm.log2.f32", f32T)
+            C_INTRINSIC_IMPL(c_log2_f64, f64T, "llvm.log2.f64", f64T)
+            C_INTRINSIC_IMPL_BEGIN(custom_fsign_f32, f32T, "custom.fsign.f32", f32T)
                 // (0 < val) - (val < 0)
                 LLVMValueRef val = LLVMGetParam(result, 0);
                 LLVMValueRef zero = LLVMConstReal(f32T, 0.0);
@@ -416,8 +305,8 @@ struct LLVMIRGenerator {
                 val = LLVMBuildSub(builder, a, b, "");
                 val = LLVMBuildSIToFP(builder, val, f32T, "");
                 LLVMBuildRet(builder, val);
-            LLVM_INTRINSIC_IMPL_END()
-            LLVM_INTRINSIC_IMPL_BEGIN(custom_fsign_f64, f64T, "custom.fsign.f64", f64T)
+            C_INTRINSIC_IMPL_END()
+            C_INTRINSIC_IMPL_BEGIN(custom_fsign_f64, f64T, "custom.fsign.f64", f64T)
                 // (0 < val) - (val < 0)
                 LLVMValueRef val = LLVMGetParam(result, 0);
                 LLVMValueRef zero = LLVMConstReal(f64T, 0.0);
@@ -426,26 +315,26 @@ struct LLVMIRGenerator {
                 val = LLVMBuildSub(builder, a, b, "");
                 val = LLVMBuildSIToFP(builder, val, f64T, "");
                 LLVMBuildRet(builder, val);
-            LLVM_INTRINSIC_IMPL_END()
-            LLVM_INTRINSIC_IMPL_BEGIN(custom_radians_f32, f32T, "custom.radians.f32", f32T)
+            C_INTRINSIC_IMPL_END()
+            C_INTRINSIC_IMPL_BEGIN(custom_radians_f32, f32T, "custom.radians.f32", f32T)
                 LLVMBuildRet(builder, LLVMBuildFMul(builder,
                     LLVMGetParam(result, 0), LLVMConstReal(f32T, deg2rad), ""));
-            LLVM_INTRINSIC_IMPL_END()
-            LLVM_INTRINSIC_IMPL_BEGIN(custom_radians_f64, f64T, "custom.radians.f64", f64T)
+            C_INTRINSIC_IMPL_END()
+            C_INTRINSIC_IMPL_BEGIN(custom_radians_f64, f64T, "custom.radians.f64", f64T)
                 LLVMBuildRet(builder, LLVMBuildFMul(builder,
                     LLVMGetParam(result, 0), LLVMConstReal(f64T, deg2rad), ""));
-            LLVM_INTRINSIC_IMPL_END()
-            LLVM_INTRINSIC_IMPL_BEGIN(custom_degrees_f32, f32T, "custom.degrees.f32", f32T)
+            C_INTRINSIC_IMPL_END()
+            C_INTRINSIC_IMPL_BEGIN(custom_degrees_f32, f32T, "custom.degrees.f32", f32T)
                 LLVMBuildRet(builder, LLVMBuildFMul(builder,
                     LLVMGetParam(result, 0), LLVMConstReal(f32T, rad2deg), ""));
-            LLVM_INTRINSIC_IMPL_END()
-            LLVM_INTRINSIC_IMPL_BEGIN(custom_degrees_f64, f64T, "custom.degrees.f64", f64T)
+            C_INTRINSIC_IMPL_END()
+            C_INTRINSIC_IMPL_BEGIN(custom_degrees_f64, f64T, "custom.degrees.f64", f64T)
                 LLVMBuildRet(builder, LLVMBuildFMul(builder,
                     LLVMGetParam(result, 0), LLVMConstReal(f64T, rad2deg), ""));
-            LLVM_INTRINSIC_IMPL_END()
-#undef LLVM_INTRINSIC_IMPL
-#undef LLVM_INTRINSIC_IMPL_BEGIN
-#undef LLVM_INTRINSIC_IMPL_END
+            C_INTRINSIC_IMPL_END()
+#undef C_INTRINSIC_IMPL
+#undef C_INTRINSIC_IMPL_BEGIN
+#undef C_INTRINSIC_IMPL_END
             default: assert(false); break;
             }
             intrinsics[op] = result;
@@ -479,154 +368,20 @@ struct LLVMIRGenerator {
 
     }
 
-    static LLVMTypeRef abi_struct_type(const ABIClass *classes, size_t sz) {
-        LLVMTypeRef types[sz];
-        size_t k = 0;
-        for (size_t i = 0; i < sz; ++i) {
-            ABIClass cls = classes[i];
-            switch(cls) {
-            case ABI_CLASS_SSE: {
-                types[i] = f32x2T; k++;
-            } break;
-            case ABI_CLASS_SSESF: {
-                types[i] = f32T; k++;
-            } break;
-            case ABI_CLASS_SSEDF: {
-                types[i] = f64T; k++;
-            } break;
-            case ABI_CLASS_INTEGER: {
-                types[i] = i64T; k++;
-            } break;
-            case ABI_CLASS_INTEGERSI: {
-                types[i] = i32T; k++;
-            } break;
-            case ABI_CLASS_INTEGERSI16: {
-                types[i] = i16T; k++;
-            } break;
-            case ABI_CLASS_INTEGERSI8: {
-                types[i] = i8T; k++;
-            } break;
-            default: {
-                // do nothing
-#if 0
-                StyledStream ss;
-                ss << "unhandled ABI class: " <<
-                    abi_class_to_string(cls) << std::endl;
-#endif
-            } break;
-            }
-        }
-        if (k != sz) return nullptr;
-        return LLVMStructType(types, sz, false);
-    }
-
-    SCOPES_RESULT(LLVMValueRef) abi_import_argument(const Type *param_type, LLVMValueRef func, size_t &k) {
-        SCOPES_RESULT_TYPE(LLVMValueRef);
-        ABIClass classes[MAX_ABI_CLASSES];
-        size_t sz = abi_classify(param_type, classes);
-        if (!sz) {
-            LLVMValueRef val = LLVMGetParam(func, k++);
-            return LLVMBuildLoad(builder, val, "");
-        }
-        LLVMTypeRef T = SCOPES_GET_RESULT(type_to_llvm_type(param_type));
-        auto tk = LLVMGetTypeKind(T);
-        if (tk == LLVMStructTypeKind) {
-            auto ST = abi_struct_type(classes, sz);
-            if (ST) {
-                // reassemble from argument-sized bits
-                auto ptr = safe_alloca(ST);
-                auto zero = LLVMConstInt(i32T,0,false);
-                for (size_t i = 0; i < sz; ++i) {
-                    LLVMValueRef indices[] = {
-                        zero, LLVMConstInt(i32T,i,false),
-                    };
-                    auto dest = LLVMBuildGEP(builder, ptr, indices, 2, "");
-                    LLVMBuildStore(builder, LLVMGetParam(func, k++), dest);
-                }
-                ptr = LLVMBuildBitCast(builder, ptr, LLVMPointerType(T, 0), "");
-                return LLVMBuildLoad(builder, ptr, "");
-            }
-        }
-        LLVMValueRef val = LLVMGetParam(func, k++);
-        assert(val);
-        return val;
-    }
-
-    SCOPES_RESULT(void) abi_export_argument(LLVMValueRef val, const Type *AT,
-        LLVMValueRefs &values, std::vector<size_t> &memptrs) {
-        SCOPES_RESULT_TYPE(void);
-        ABIClass classes[MAX_ABI_CLASSES];
-        size_t sz = abi_classify(AT, classes);
-        if (!sz) {
-            LLVMValueRef ptrval = safe_alloca(SCOPES_GET_RESULT(type_to_llvm_type(AT)));
-            LLVMBuildStore(builder, val, ptrval);
-            val = ptrval;
-            memptrs.push_back(values.size());
-            values.push_back(val);
-            return {};
-        }
-        auto tk = LLVMGetTypeKind(LLVMTypeOf(val));
-        if (tk == LLVMStructTypeKind) {
-            auto ST = abi_struct_type(classes, sz);
-            if (ST) {
-                // break into argument-sized bits
-                auto ptr = safe_alloca(LLVMTypeOf(val));
-                auto zero = LLVMConstInt(i32T,0,false);
-                LLVMBuildStore(builder, val, ptr);
-                ptr = LLVMBuildBitCast(builder, ptr, LLVMPointerType(ST, 0), "");
-                for (size_t i = 0; i < sz; ++i) {
-                    LLVMValueRef indices[] = {
-                        zero, LLVMConstInt(i32T,i,false),
-                    };
-                    auto val = LLVMBuildGEP(builder, ptr, indices, 2, "");
-                    val = LLVMBuildLoad(builder, val, "");
-                    values.push_back(val);
-                }
-                return {};
-            }
-        }
-        values.push_back(val);
-        return {};
-    }
-
-    static SCOPES_RESULT(void) abi_transform_parameter(const Type *AT,
-        LLVMTypeRefs &params) {
-        SCOPES_RESULT_TYPE(void);
-        ABIClass classes[MAX_ABI_CLASSES];
-        size_t sz = abi_classify(AT, classes);
-        auto T = SCOPES_GET_RESULT(type_to_llvm_type(AT));
-        if (!sz) {
-            params.push_back(LLVMPointerType(T, 0));
-            return {};
-        }
-        auto tk = LLVMGetTypeKind(T);
-        if (tk == LLVMStructTypeKind) {
-            auto ST = abi_struct_type(classes, sz);
-            if (ST) {
-                for (size_t i = 0; i < sz; ++i) {
-                    params.push_back(LLVMStructGetTypeAtIndex(ST, i));
-                }
-                return {};
-            }
-        }
-        params.push_back(T);
-        return {};
-    }
-
-    static SCOPES_RESULT(LLVMTypeRef) create_llvm_type(const Type *type) {
+    static SCOPES_RESULT(LLVMTypeRef) create_c_type(const Type *type) {
         SCOPES_RESULT_TYPE(LLVMTypeRef);
         switch(type->kind()) {
         case TK_Qualify: {
             auto qt = cast<QualifyType>(type);
-            auto lltype = SCOPES_GET_RESULT(_type_to_llvm_type(qt->type));
+            auto tid = SCOPES_GET_RESULT(_type_to_c_type(qt->type));
             auto rq = try_qualifier<ReferQualifier>(type);
             if (rq) {
-                lltype = LLVMPointerType(lltype, 0);
+                tid = c_pointer_type(tid);
             }
-            return lltype;
+            return tid;
         } break;
         case TK_Integer:
-            return LLVMIntType(cast<IntegerType>(type)->width);
+            return c_int_type(cast<IntegerType>(type)->width);
         case TK_Real:
             switch(cast<RealType>(type)->width) {
             case 32: return f32T;
@@ -2278,123 +2033,36 @@ struct LLVMIRGenerator {
 
 };
 
-Error *LLVMIRGenerator::last_llvm_error = nullptr;
-std::unordered_map<const Type *, LLVMTypeRef> LLVMIRGenerator::type_cache;
-std::unordered_map<Function *, LLVMModuleRef> LLVMIRGenerator::func_cache;
-std::unordered_map<Global *, LLVMModuleRef> LLVMIRGenerator::global_cache;
-Types LLVMIRGenerator::type_todo;
-LLVMTypeRef LLVMIRGenerator::voidT = nullptr;
-LLVMTypeRef LLVMIRGenerator::i1T = nullptr;
-LLVMTypeRef LLVMIRGenerator::i8T = nullptr;
-LLVMTypeRef LLVMIRGenerator::i16T = nullptr;
-LLVMTypeRef LLVMIRGenerator::i32T = nullptr;
-LLVMTypeRef LLVMIRGenerator::i64T = nullptr;
-LLVMTypeRef LLVMIRGenerator::f32T = nullptr;
-LLVMTypeRef LLVMIRGenerator::f32x2T = nullptr;
-LLVMTypeRef LLVMIRGenerator::f64T = nullptr;
-LLVMTypeRef LLVMIRGenerator::rawstringT = nullptr;
-LLVMTypeRef LLVMIRGenerator::noneT = nullptr;
-LLVMValueRef LLVMIRGenerator::noneV = nullptr;
-LLVMValueRef LLVMIRGenerator::falseV = nullptr;
-LLVMValueRef LLVMIRGenerator::trueV = nullptr;
-LLVMAttributeRef LLVMIRGenerator::attr_byval = nullptr;
-LLVMAttributeRef LLVMIRGenerator::attr_sret = nullptr;
-LLVMAttributeRef LLVMIRGenerator::attr_nonnull = nullptr;
+Error *CGenerator::last_llvm_error = nullptr;
+static std::unordered_map<const Type *, Id> CGenerator::type_cache;
+static std::unordered_map<Function *, Id> CGenerator::func_cache;
+std::unordered_map<Global *, Id> CGenerator::global_cache;
+static std::unordered_map<Id, std::string> CGenerator::definition_cache;
+static char CGenerator::temp[SCOPES_MAX_TEMP_SIZE];
+static Types CGenerator::type_todo;
+static Id CGenerator::next_id = 1;
+
+Id CGenerator::voidT = 0;
+Id CGenerator::i1T = 0;
+Id CGenerator::i8T = 0;
+Id CGenerator::i16T = 0;
+Id CGenerator::i32T = 0;
+Id CGenerator::i64T = 0;
+Id CGenerator::f32T = 0;
+Id CGenerator::f32x2T = 0;
+Id CGenerator::f64T = 0;
+Id CGenerator::rawstringT = 0;
+Id CGenerator::noneT = 0;
+Id CGenerator::noneV = 0;
+Id CGenerator::falseV = 0;
+Id CGenerator::trueV = 0;
 
 //------------------------------------------------------------------------------
 // IL COMPILER
 //------------------------------------------------------------------------------
 
-#if 1
-static void pprint(int pos, unsigned char *buf, int len, const char *disasm) {
-  int i;
-  printf("%04x:  ", pos);
-  for (i = 0; i < 8; i++) {
-    if (i < len) {
-      printf("%02x ", buf[i]);
-    } else {
-      printf("   ");
-    }
-  }
-
-  printf("   %s\n", disasm);
-}
-
-static void do_disassemble(LLVMTargetMachineRef tm, void *fptr, int siz) {
-
-    unsigned char *buf = (unsigned char *)fptr;
-
-  LLVMDisasmContextRef D = LLVMCreateDisasmCPUFeatures(
-    LLVMGetTargetMachineTriple(tm),
-    LLVMGetTargetMachineCPU(tm),
-    LLVMGetTargetMachineFeatureString(tm),
-    NULL, 0, NULL, NULL);
-    LLVMSetDisasmOptions(D,
-        LLVMDisassembler_Option_PrintImmHex);
-  char outline[1024];
-  int pos;
-
-  if (!D) {
-    printf("ERROR: Couldn't create disassembler\n");
-    return;
-  }
-
-  pos = 0;
-  while (pos < siz) {
-    size_t l = LLVMDisasmInstruction(D, buf + pos, siz - pos, 0, outline,
-                                     sizeof(outline));
-    if (!l) {
-      pprint(pos, buf + pos, 1, "\t???");
-      pos++;
-        break;
-    } else {
-      pprint(pos, buf + pos, l, outline);
-      pos += l;
-    }
-  }
-
-  LLVMDisasmDispose(D);
-}
-
-class DisassemblyListener : public llvm::JITEventListener {
-public:
-    llvm::ExecutionEngine *ee;
-    DisassemblyListener(llvm::ExecutionEngine *_ee) : ee(_ee) {}
-
-    std::unordered_map<void *, size_t> sizes;
-
-    void InitializeDebugData(
-        llvm::StringRef name,
-        llvm::object::SymbolRef::Type type, uint64_t sz) {
-        if(type == llvm::object::SymbolRef::ST_Function) {
-            #if !defined(__arm__) && !defined(__linux__)
-            name = name.substr(1);
-            #endif
-            void * addr = (void*)ee->getFunctionAddress(name);
-            if(addr) {
-                assert(addr);
-                sizes[addr] = sz;
-            }
-        }
-    }
-
-    virtual void NotifyObjectEmitted(
-        const llvm::object::ObjectFile &Obj,
-        const llvm::RuntimeDyld::LoadedObjectInfo &L) {
-        auto size_map = llvm::object::computeSymbolSizes(Obj);
-        for(auto & S : size_map) {
-            llvm::object::SymbolRef sym = S.first;
-            auto name = sym.getName();
-            auto type = sym.getType();
-            if(name && type)
-                InitializeDebugData(name.get(),type.get(),S.second);
-        }
-    }
-};
-#endif
-
-SCOPES_RESULT(void) compile_object(const String *path, Scope *scope, uint64_t flags) {
-    SCOPES_RESULT_TYPE(void);
+SCOPES_RESULT(const String *) compile_c(Scope *scope, uint64_t flags) {
+    SCOPES_RESULT_TYPE(const String *);
     Timer sum_compile_time(TIMER_Compile);
 #if SCOPES_COMPILE_WITH_DEBUG_INFO
 #else
@@ -2404,7 +2072,7 @@ SCOPES_RESULT(void) compile_object(const String *path, Scope *scope, uint64_t fl
     flags |= CF_O3;
 #endif
 
-    LLVMIRGenerator ctx;
+    CGenerator ctx;
     ctx.generate_object = true;
     if (flags & CF_NoDebugInfo) {
         ctx.use_debug_info = false;
@@ -2444,11 +2112,8 @@ SCOPES_RESULT(void) compile_object(const String *path, Scope *scope, uint64_t fl
     return {};
 }
 
-#if 1
-static DisassemblyListener *disassembly_listener = nullptr;
-#endif
-
-SCOPES_RESULT(ConstPointerRef) compile(const FunctionRef &fn, uint64_t flags) {
+#if 0
+SCOPES_RESULT(ConstPointerRef) compile_c(const FunctionRef &fn, uint64_t flags) {
     SCOPES_RESULT_TYPE(ConstPointerRef);
     Timer sum_compile_time(TIMER_Compile);
 #if SCOPES_COMPILE_WITH_DEBUG_INFO
@@ -2465,12 +2130,12 @@ SCOPES_RESULT(ConstPointerRef) compile(const FunctionRef &fn, uint64_t flags) {
     */
    const Type *functype = fn->get_type();
 
-    LLVMIRGenerator ctx;
+    CGenerator ctx;
     if (flags & CF_NoDebugInfo) {
         ctx.use_debug_info = false;
     }
 
-    LLVMIRGenerator::ModuleValuePair result;
+    CGenerator::ModuleValuePair result;
     {
         /*
         A note on debugging "LLVM ERROR:" messages that seem to give no plausible
@@ -2548,5 +2213,6 @@ SCOPES_RESULT(ConstPointerRef) compile(const FunctionRef &fn, uint64_t flags) {
 
     return ref(fn.anchor(), ConstPointer::from(functype, pfunc));
 }
+#endif
 
 } // namespace scopes
