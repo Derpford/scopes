@@ -3913,6 +3913,9 @@ spice-quote
     inline compile (func flags...)
         sc_compile func (parse-compile-flags flags...)
 
+    inline compile-jit (func flags...)
+        sc_compile_jit func (parse-compile-flags flags...)
+
     inline compile-glsl (target func flags...)
         sc_compile_glsl target func (parse-compile-flags flags...)
 
@@ -5049,8 +5052,13 @@ spice _static-compile (func flags)
     hide-traceback;
     'tag `[(sc_compile func flags)] ('anchor args)
 
+spice _static-compile-jit (func flags)
+    flags as:= u64
+    hide-traceback;
+    'tag `[(sc_compile_jit func flags)] ('anchor args)
+
 inline gen-static-compile-shader (f)
-    spice _static-compile-glsl (target func flags)
+    spice _static-compile-shader (target func flags)
         target as:= Symbol
         flags as:= u64
         hide-traceback;
@@ -5062,6 +5070,8 @@ let _static-compile-spirv = (gen-static-compile-shader sc_compile_spirv)
 spice-quote
     inline static-compile (func flags...)
         _static-compile func (parse-compile-flags flags...)
+    inline static-compile-jit (func flags...)
+        _static-compile-jit func (parse-compile-flags flags...)
     inline static-compile-glsl (target func flags...)
         _static-compile-glsl target func (parse-compile-flags flags...)
     inline static-compile-spirv (target func flags...)

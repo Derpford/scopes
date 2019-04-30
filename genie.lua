@@ -138,6 +138,7 @@ project "scopesrt"
         "src/platform_abi.cpp",
         "src/gen_spirv.cpp",
         "src/gen_llvm.cpp",
+        "src/gen_jit.cpp",
         "src/expander.cpp",
         "src/globals.cpp",
         "src/hash.cpp",
@@ -161,6 +162,7 @@ project "scopesrt"
         "external",
         "SPIRV-Tools/include",
         "include",
+        "libjit/include",
         "."
     }
     libdirs {

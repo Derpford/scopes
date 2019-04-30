@@ -21,6 +21,7 @@
 #include "expander.hpp"
 #include "gen_llvm.hpp"
 #include "gen_spirv.hpp"
+#include "gen_jit.hpp"
 #include "anchor.hpp"
 #include "boot.hpp"
 #include "gc.hpp"
@@ -267,6 +268,13 @@ sc_valueref_raises_t sc_compile(sc_valueref_t srcl, uint64_t flags) {
     SCOPES_RESULT_TYPE(ConstPointerRef);
     auto result = SCOPES_C_GET_RESULT(extract_function_constant(srcl));
     return convert_result(compile(result, flags));
+}
+
+SCOPES_LIBEXPORT sc_valueref_raises_t sc_compile_jit(sc_valueref_t srcl, uint64_t flags) {
+    using namespace scopes;
+    SCOPES_RESULT_TYPE(ConstPointerRef);
+    auto result = SCOPES_C_GET_RESULT(extract_function_constant(srcl));
+    return convert_result(compile_jit(result, flags));
 }
 
 sc_string_raises_t sc_compile_spirv(sc_symbol_t target, sc_valueref_t srcl, uint64_t flags) {
@@ -2062,6 +2070,7 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typify_template, TYPE_ValueRef, TYPE_ValueRef, TYPE_I32, native_ro_pointer_type(TYPE_Type));
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typify, TYPE_ValueRef, TYPE_Closure, TYPE_I32, native_ro_pointer_type(TYPE_Type));
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile, TYPE_ValueRef, TYPE_ValueRef, TYPE_U64);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_jit, TYPE_ValueRef, TYPE_ValueRef, TYPE_U64);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_spirv, TYPE_String, TYPE_Symbol, TYPE_ValueRef, TYPE_U64);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_glsl, TYPE_String, TYPE_Symbol, TYPE_ValueRef, TYPE_U64);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_object, _void, TYPE_String, TYPE_Scope, TYPE_U64);
