@@ -131,7 +131,6 @@ typedef std::vector<const Type *> Types;
     T(TYPE_F64, "f64") \
     T(TYPE_F80, "f80") \
     \
-    T(TYPE_List, "list") \
     T(TYPE_Anchor, "Anchor") \
     T(TYPE_String, "string") \
     \

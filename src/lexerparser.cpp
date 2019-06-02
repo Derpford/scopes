@@ -9,7 +9,6 @@
 #include "source_file.hpp"
 #include "anchor.hpp"
 #include "type.hpp"
-#include "list.hpp"
 #include "value.hpp"
 #include "dyn_cast.inc"
 #include "globals.hpp"
@@ -711,36 +710,29 @@ Any LexerParser::get() {
 //////////////////////////////
 
 LexerParser::ListBuilder::ListBuilder(LexerParser &_lexer) :
-    lexer(_lexer),
-    prev(EOL),
-    eol(EOL) {}
+    lexer(_lexer) {
+}
 
 void LexerParser::ListBuilder::append(ValueRef value) {
-    prev = List::from(value, prev);
+    current.push_back(value);
 }
 
 bool LexerParser::ListBuilder::is_empty() const {
-    return (prev == EOL);
-}
-
-bool LexerParser::ListBuilder::is_expression_empty() const {
-    return (prev == EOL);
-}
-
-void LexerParser::ListBuilder::reset_start() {
-    eol = prev;
+    return current.empty() && values.empty();
 }
 
 void LexerParser::ListBuilder::split(const Anchor *anchor) {
-    // reverse what we have, up to last split point and wrap result
-    // in cell
-    prev = List::from(ref(anchor,
-        ConstPointer::list_from(reverse_list(prev, eol))), eol);
-    reset_start();
+    // wrap from last split point into cell
+    values.push_back(ref(anchor, SymList::from(current)));
+    current.clear();
 }
 
 const List *LexerParser::ListBuilder::get_result() {
-    return reverse_list(prev);
+    for (auto &&val : current) {
+        values.push_back(current);
+    }
+    current.clear();
+    return SymList::from(values);
 }
 
 //////////////////////////////

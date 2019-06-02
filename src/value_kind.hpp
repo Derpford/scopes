@@ -27,6 +27,7 @@ namespace scopes {
     T(VK_ReturnTemplate, "value-kind-return-template", ReturnTemplate) \
     T(VK_RaiseTemplate, "value-kind-raise-template", RaiseTemplate) \
     T(VK_Break, "value-kind-break", Break) \
+    T(VK_SymList, "value-kind-symbolic-list", SymList) \
     T(VK_ArgumentListTemplate, "value-kind-argument-list-template", ArgumentListTemplate) \
     T(VK_ExtractArgumentTemplate, "value-kind-extract-argument-template", ExtractArgumentTemplate) \
     T(VK_ParameterTemplate, "value-kind-parameter-template", ParameterTemplate) \

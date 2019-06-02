@@ -56,7 +56,7 @@ struct ASTContext {
 
 SCOPES_RESULT(const Type *) extract_type_constant(const ValueRef &value);
 SCOPES_RESULT(const Closure *) extract_closure_constant(const ValueRef &value);
-SCOPES_RESULT(const List *) extract_list_constant(const ValueRef &value);
+SCOPES_RESULT(SymListRef) extract_symlist_constant(const ValueRef &value);
 SCOPES_RESULT(const String *) extract_string_constant(const ValueRef &value);
 SCOPES_RESULT(Builtin) extract_builtin_constant(const ValueRef &value);
 SCOPES_RESULT(Symbol) extract_symbol_constant(const ValueRef &value);

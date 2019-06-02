@@ -194,6 +194,28 @@ struct Keyed : TypedValue {
 
 //------------------------------------------------------------------------------
 
+struct SymList : UntypedValue {
+    static bool classof(const Value *T);
+
+    SymList(const Values &values);
+
+    //bool is_constant() const;
+    bool empty() const;
+
+    bool key_equal(const SymList *other) const;
+    std::size_t hash() const;
+
+    //static ValueRef empty_from();
+    static SymListRef from(const Values &values = {});
+
+    const Values &values() const;
+
+protected:
+    Values _values;
+};
+
+//------------------------------------------------------------------------------
+
 struct ArgumentListTemplate : UntypedValue {
     static bool classof(const Value *T);
 

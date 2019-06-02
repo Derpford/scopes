@@ -8,7 +8,6 @@
 #include "error.hpp"
 #include "gc.hpp"
 #include "anchor.hpp"
-#include "list.hpp"
 #include "hash.hpp"
 #include "type/qualify_type.hpp"
 #include "dyn_cast.inc"

@@ -18,8 +18,6 @@
 #include "dyn_cast.inc"
 #include "compiler_flags.hpp"
 #include "gen_llvm.hpp"
-#include "list.hpp"
-#include "expander.hpp"
 #include "globals.hpp"
 #include "quote.hpp"
 #include "anchor.hpp"
@@ -1442,10 +1440,8 @@ SCOPES_RESULT(sc_ast_macro_func_t) extract_astmacro_constant(const ValueRef &val
     return (sc_ast_macro_func_t)x->value;
 }
 
-SCOPES_RESULT(const List *) extract_list_constant(const ValueRef &value) {
-    SCOPES_RESULT_TYPE(const List *);
-    ConstPointerRef x = SCOPES_GET_RESULT(extract_typed_constant<ConstPointer>(TYPE_List, value));
-    return (const List *)x->value;
+SCOPES_RESULT(SymListRef) extract_symlist_constant(const ValueRef &value) {
+    return extract_constant<SymList, VK_SymList>(value);
 }
 
 SCOPES_RESULT(const String *) extract_string_constant(const ValueRef &value) {

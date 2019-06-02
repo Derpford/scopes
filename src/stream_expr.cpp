@@ -5,7 +5,6 @@
 */
 
 #include "stream_expr.hpp"
-#include "list.hpp"
 #include "anchor.hpp"
 #include "value.hpp"
 #include "prover.hpp"

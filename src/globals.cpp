@@ -6,7 +6,6 @@
 
 #include "globals.hpp"
 #include "string.hpp"
-#include "list.hpp"
 #include "types.hpp"
 #include "qualifiers.hpp"
 #include "qualifier.inc"
@@ -18,7 +17,6 @@
 #include "platform_abi.hpp"
 #include "source_file.hpp"
 #include "lexerparser.hpp"
-#include "expander.hpp"
 #include "gen_llvm.hpp"
 #include "gen_spirv.hpp"
 #include "anchor.hpp"

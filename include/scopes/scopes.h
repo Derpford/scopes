@@ -66,7 +66,6 @@ typedef scopes::Type sc_type_t;
 typedef scopes::Scope sc_scope_t;
 typedef scopes::Symbol sc_symbol_t;
 typedef scopes::String sc_string_t;
-typedef scopes::List sc_list_t;
 typedef scopes::Error sc_error_t;
 typedef scopes::Anchor sc_anchor_t;
 typedef scopes::Parameter sc_parameter_t;
@@ -85,7 +84,6 @@ typedef scopes::ValueRef sc_valueref_t;
 typedef struct sc_type_ sc_type_t;
 typedef struct sc_scope_ sc_scope_t;
 typedef struct sc_string_ sc_string_t;
-typedef struct sc_list_ sc_list_t;
 typedef struct sc_error_ sc_error_t;
 typedef struct sc_anchor_ sc_anchor_t;
 typedef struct sc_parameter_ sc_parameter_t;
@@ -102,9 +100,6 @@ typedef struct sc_valueref_ { sc_value_t *_0; const sc_anchor_t *_1; } sc_valuer
 typedef struct sc_bool_string_tuple_ { bool _0; const sc_string_t *_1; } sc_bool_string_tuple_t;
 typedef struct sc_bool_valueref_tuple_ { bool _0; sc_valueref_t _1; } sc_bool_valueref_tuple_t;
 
-typedef struct sc_valueref_list_tuple_ { sc_valueref_t _0; const sc_list_t *_1; } sc_valueref_list_tuple_t;
-typedef struct sc_valueref_list_scope_tuple_ { sc_valueref_t _0; const sc_list_t *_1; sc_scope_t *_2; } sc_valueref_list_scope_tuple_t;
-
 typedef struct sc_symbol_valueref_tuple_ { sc_symbol_t _0; sc_valueref_t _1; } sc_symbol_valueref_tuple_t;
 typedef struct sc_symbol_type_tuple_ { sc_symbol_t _0; const sc_type_t *_1; } sc_symbol_type_tuple_t;
 
@@ -116,7 +111,9 @@ typedef struct sc_rawstring_i32_array_tuple_ { int _0; char **_1; } sc_rawstring
 
 typedef struct sc_type_type_tuple_ { const sc_type_t *_0; const sc_type_t *_1; } sc_type_type_tuple_t;
 
-typedef struct sc_list_scope_tuple_ { const sc_list_t *_0; sc_scope_t *_1; } sc_list_scope_tuple_t;
+typedef struct sc_valueref_scope_tuple_ { sc_valueref_t _0; sc_scope_t *_1; } sc_valueref_scope_tuple_t;
+
+typedef struct sc_valueref_valueref_tuple_ { sc_valueref_t _0; sc_valueref_t _1; } sc_valueref_valueref_tuple_t;
 
 // raising types
 
@@ -133,13 +130,9 @@ SCOPES_TYPEDEF_RESULT_RAISES(sc_symbol_raises, sc_symbol_t);
 SCOPES_TYPEDEF_RESULT_RAISES(sc_type_raises, const sc_type_t *);
 SCOPES_TYPEDEF_RESULT_RAISES(sc_bool_raises, bool);
 
-SCOPES_TYPEDEF_RESULT_RAISES(sc_valueref_list_scope_raises, sc_valueref_list_scope_tuple_t);
-SCOPES_TYPEDEF_RESULT_RAISES(sc_list_scope_raises, sc_list_scope_tuple_t);
-
 // prototypes
 
 typedef sc_valueref_raises_t (*sc_ast_macro_func_t)(sc_valueref_t);
-typedef sc_list_scope_raises_t (*sc_syntax_wildcard_func_t)(const sc_list_t *, sc_scope_t *);
 
 // booting
 
@@ -153,8 +146,6 @@ SCOPES_LIBEXPORT int sc_cache_misses();
 
 // compiler
 
-SCOPES_LIBEXPORT sc_valueref_list_scope_raises_t sc_expand(sc_valueref_t expr, const sc_list_t *next, sc_scope_t *scope);
-SCOPES_LIBEXPORT sc_valueref_raises_t sc_eval(const sc_anchor_t *anchor, const sc_list_t *expr, sc_scope_t *scope);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_prove(sc_valueref_t expr);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_typify(const sc_closure_t *f, int numtypes, const sc_type_t **typeargs);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_typify_template(sc_valueref_t f, int numtypes, const sc_type_t **typeargs);
@@ -165,7 +156,6 @@ SCOPES_LIBEXPORT const sc_string_t *sc_default_target_triple();
 SCOPES_LIBEXPORT sc_void_raises_t sc_compile_object(const sc_string_t *target_triple, int file_kind, const sc_string_t *path, sc_scope_t *table, uint64_t flags);
 SCOPES_LIBEXPORT void sc_enter_solver_cli ();
 SCOPES_LIBEXPORT sc_size_raises_t sc_verify_stack ();
-SCOPES_LIBEXPORT sc_valueref_raises_t sc_eval_inline(const sc_anchor_t *anchor, const sc_list_t *expr, sc_scope_t *scope);
 SCOPES_LIBEXPORT sc_rawstring_i32_array_tuple_t sc_launch_args();
 
 // value
@@ -319,7 +309,7 @@ SCOPES_LIBEXPORT uint64_t sc_hashbytes (const char *data, size_t size);
 // C bridge
 
 SCOPES_LIBEXPORT sc_scope_raises_t sc_import_c(const sc_string_t *path,
-    const sc_string_t *content, const sc_list_t *arglist);
+    const sc_string_t *content, sc_valueref_t arglist);
 SCOPES_LIBEXPORT sc_void_raises_t sc_load_library(const sc_string_t *name);
 SCOPES_LIBEXPORT sc_void_raises_t sc_load_object(const sc_string_t *path);
 
@@ -360,19 +350,19 @@ SCOPES_LIBEXPORT const sc_string_t *sc_string_lslice(const sc_string_t *str, siz
 SCOPES_LIBEXPORT const sc_string_t *sc_string_rslice(const sc_string_t *str, size_t offset);
 SCOPES_LIBEXPORT int sc_string_compare(const sc_string_t *a, const sc_string_t *b);
 
-// lists
+// symbolic lists
 
-SCOPES_LIBEXPORT const sc_list_t *sc_list_cons(sc_valueref_t at, const sc_list_t *next);
-SCOPES_LIBEXPORT const sc_list_t *sc_list_join(const sc_list_t *a, const sc_list_t *b);
-SCOPES_LIBEXPORT const sc_list_t *sc_list_dump(const sc_list_t *l);
-SCOPES_LIBEXPORT const sc_string_t *sc_list_repr(const sc_list_t *l);
-SCOPES_LIBEXPORT const sc_string_t *sc_list_serialize(const sc_list_t *l);
-SCOPES_LIBEXPORT sc_valueref_list_tuple_t sc_list_decons(const sc_list_t *l);
-SCOPES_LIBEXPORT int sc_list_count(const sc_list_t *l);
-SCOPES_LIBEXPORT sc_valueref_t sc_list_at(const sc_list_t *l);
-SCOPES_LIBEXPORT const sc_list_t *sc_list_next(const sc_list_t *l);
-SCOPES_LIBEXPORT const sc_list_t *sc_list_reverse(const sc_list_t *l);
-SCOPES_LIBEXPORT bool sc_list_compare(const sc_list_t *a, const sc_list_t *b);
+SCOPES_LIBEXPORT sc_valueref_t sc_symlist_cons(sc_valueref_t at, sc_valueref_t next);
+SCOPES_LIBEXPORT sc_valueref_t sc_symlist_join(sc_valueref_t a, sc_valueref_t b);
+SCOPES_LIBEXPORT sc_valueref_t sc_symlist_dump(sc_valueref_t l);
+SCOPES_LIBEXPORT const sc_string_t *sc_symlist_repr(sc_valueref_t l);
+SCOPES_LIBEXPORT const sc_string_t *sc_symlist_serialize(sc_valueref_t l);
+SCOPES_LIBEXPORT sc_valueref_valueref_tuple_t sc_symlist_decons(sc_valueref_t l);
+SCOPES_LIBEXPORT int sc_symlist_count(sc_valueref_t l);
+SCOPES_LIBEXPORT sc_valueref_t sc_symlist_at(sc_valueref_t l);
+SCOPES_LIBEXPORT sc_valueref_t sc_symlist_next(sc_valueref_t l);
+SCOPES_LIBEXPORT sc_valueref_t sc_symlist_reverse(sc_valueref_t l);
+SCOPES_LIBEXPORT bool sc_symlist_compare(sc_valueref_t a, sc_valueref_t b);
 
 // anchors
 

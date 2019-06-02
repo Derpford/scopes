@@ -11,6 +11,7 @@
 #include "valueref.inc"
 
 #include <stddef.h>
+#include <vector>
 
 namespace scopes {
 
@@ -60,8 +61,8 @@ const char TOKEN_TERMINATORS[] = "()[]{}\"';#,";
 struct LexerParser {
     struct ListBuilder {
         LexerParser &lexer;
-        const List *prev;
-        const List *eol;
+        std::vector<ValueRef> current;
+        std::vector<ValueRef> values;
 
         ListBuilder(LexerParser &_lexer);
 
@@ -69,9 +70,9 @@ struct LexerParser {
 
         bool is_empty() const;
 
-        bool is_expression_empty() const;
+        //bool is_expression_empty() const;
 
-        void reset_start();
+        //void reset_start();
 
         void split(const Anchor *anchor);
 

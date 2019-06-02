@@ -11,11 +11,9 @@
 #include "lexerparser.hpp"
 #include "source_file.hpp"
 #include "prover.hpp"
-#include "list.hpp"
 #include "execution.hpp"
 #include "globals.hpp"
 #include "scope.hpp"
-#include "expander.hpp"
 #include "types.hpp"
 #include "gen_llvm.hpp"
 #include "compiler_flags.hpp"
@@ -100,12 +98,12 @@ SCOPES_RESULT(ValueRef) load_custom_core(const char *executable_path) {
     while ((cursor >= ptr) && (*cursor != '('))
         cursor--;
     LexerParser footerParser(std::move(file), cursor - ptr);
-    auto expr = SCOPES_GET_RESULT(extract_list_constant(SCOPES_GET_RESULT(footerParser.parse())));
-    if (expr == EOL) {
+    auto expr = SCOPES_GET_RESULT(extract_symlist_constant(SCOPES_GET_RESULT(footerParser.parse())));
+    if (expr->empty()) {
         SCOPES_ERROR(InvalidFooter);
     }
-    auto it = SCOPES_GET_RESULT(extract_list_constant(expr->at));
-    if (it == EOL) {
+    auto it = SCOPES_GET_RESULT(extract_symlist_constant(expr->at));
+    if (it->empty()) {
         SCOPES_ERROR(InvalidFooter);
     }
     auto head = it->at;

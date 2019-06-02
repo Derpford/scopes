@@ -56,6 +56,37 @@ SCOPES_DEFINED_VALUES()
 
 //------------------------------------------------------------------------------
 
+template<typename T>
+struct ConstSet {
+    struct Hash {
+        std::size_t operator()(const T *k) const {
+            return k->hash();
+        }
+    };
+
+    struct Equal {
+        std::size_t operator()(const T *self, const T *other) const {
+            return self->key_equal(other);
+        }
+    };
+
+    std::unordered_set<T *, Hash, Equal> map;
+
+    template<typename ... Args>
+    TValueRef<T> from(Args ... args) {
+        T key(args ...);
+        auto it = map.find(&key);
+        if (it != map.end()) {
+            return ref(unknown_anchor(), *it);
+        }
+        auto val = new T(args ...);
+        map.insert(val);
+        return ref(unknown_anchor(), val);
+    }
+};
+
+//------------------------------------------------------------------------------
+
 std::size_t ValueIndex::Hash::operator()(const ValueIndex & s) const {
     return hash2(std::hash<Value *>{}(s.value.unref()), s.index);
 }
@@ -140,6 +171,51 @@ TypedValueRef Keyed::from(Symbol key, TypedValueRef node) {
     } else {
         return ref(node.anchor(), new Keyed(NT, key, node));
     }
+}
+
+//------------------------------------------------------------------------------
+
+ConstSet<SymList> symbolic_lists;
+
+SymList::SymList(const Values &values)
+    : UntypedValue(VK_SymList), _values(values) {
+}
+
+bool SymList::key_equal(const SymList *other) const {
+    auto sz = _values.size();
+    if (sz != other->_values.size())
+        return false;
+    for (int i = 0; i < sz; ++i) {
+        auto &&a = _values[i];
+        auto &&b = other->_values[i];
+        if (a != b)
+            return false;
+    }
+    return true;
+}
+
+std::size_t SymList::hash() const {
+    uint64_t h = 0;
+    for (auto &&value : _values) {
+        if (value.isa<Pure>()) {
+            h = hash2(h, value.cast<Pure>()->hash());
+        } else {
+            h = hash2(h,
+                    hash2(
+                        std::hash<const Anchor *>{}(value.anchor()),
+                        std::hash<Value *>{}(value.unref())
+                    ));
+        }
+    }
+    return h;
+}
+
+bool SymList::empty() const {
+    return _values.empty();
+}
+
+SymListRef SymList::from(const Values &values) {
+    return symbolic_lists.from(type, value);
 }
 
 //------------------------------------------------------------------------------
@@ -265,7 +341,7 @@ bool ArgumentList::is_constant() const {
 TypedValueRef ArgumentList::from(const TypedValues &values) {
     if (values.size() == 0) {
         if (!_empty_argument_list)
-            _empty_argument_list = ref(unknown_anchor(), new ArgumentList(values)); 
+            _empty_argument_list = ref(unknown_anchor(), new ArgumentList(values));
         return _empty_argument_list;
     } else if (values.size() == 1) {
         return values[0];
@@ -315,7 +391,7 @@ ValueRef ExtractArgumentTemplate::from(
                 goto repeat;
             }
         }
-    } else if (!vararg && value.isa<ExtractArgumentTemplate>()) {      
+    } else if (!vararg && value.isa<ExtractArgumentTemplate>()) {
         auto eat = value.cast<ExtractArgumentTemplate>();
         if (eat->vararg) {
             value = eat->value;
@@ -327,7 +403,7 @@ ValueRef ExtractArgumentTemplate::from(
             return ref(value.anchor(), ConstAggregate::none_from());
         }
     }
-    */ 
+    */
     return ref(value.anchor(),
         new ExtractArgumentTemplate(value, index, vararg));
 }
@@ -1214,37 +1290,6 @@ SCOPES_CONST_VALUE_KIND()
 Const::Const(ValueKind _kind, const Type *type)
     : Pure(_kind, type) {
 }
-
-//------------------------------------------------------------------------------
-
-template<typename T>
-struct ConstSet {
-    struct Hash {
-        std::size_t operator()(const T *k) const {
-            return k->hash();
-        }
-    };
-
-    struct Equal {
-        std::size_t operator()(const T *self, const T *other) const {
-            return self->key_equal(other);
-        }
-    };
-
-    std::unordered_set<T *, Hash, Equal> map;
-
-    template<typename ... Args>
-    TValueRef<T> from(Args ... args) {
-        T key(args ...);
-        auto it = map.find(&key);
-        if (it != map.end()) {
-            return ref(unknown_anchor(), *it);
-        }
-        auto val = new T(args ...);
-        map.insert(val);
-        return ref(unknown_anchor(), val);
-    }
-};
 
 //------------------------------------------------------------------------------
 
