@@ -13,7 +13,6 @@
 #include "../dyn_cast.inc"
 #include "../hash.hpp"
 
-#include "../qualifier/unique_qualifiers.hpp"
 #include "../qualifier.inc"
 
 #include <assert.h>
@@ -88,70 +87,6 @@ SCOPES_RESULT(const Type *) FunctionType::type_at_index(size_t i) const {
 }
 
 //------------------------------------------------------------------------------
-
-static void canonicalize_unique_types(ID2SetMap &idmap, Types &types,
-    int idoffset = 0, int idscale = 1) {
-    int argcount = types.size();
-    // find and remap uniques
-    for (int i = 0; i < argcount; ++i) {
-        auto &&T = types[i];
-        auto vq = try_qualifier<ViewQualifier>(T);
-        if (vq) {
-            continue;
-        }
-        auto uq = try_qualifier<UniqueQualifier>(T);
-        if (uq) {
-            int id = i * idscale + idoffset;
-            auto result = idmap.insert({uq->id, { id } });
-            if (!result.second) {
-                result.first->second.insert(id);
-            }
-            T = unique_type(T, id);
-            continue;
-        } else if (!is_plain(T)) {
-            int id = i * idscale + idoffset;
-            T = unique_type(T, id);
-        }
-    }
-    // remap views with possibly local references
-    for (int i = 0; i < argcount; ++i) {
-        auto &&T = types[i];
-        auto vq = try_qualifier<ViewQualifier>(T);
-        if (!vq) continue;
-        if (vq->ids.empty()) {
-            int id = i * idscale + idoffset;
-            T = view_type(T, { id });
-            continue;
-        }
-        int idcount = vq->sorted_ids.size();
-        IDSet ids;
-        ids.reserve(idcount);
-        for (int k = 0; k < idcount; ++k) {
-            int id = vq->sorted_ids[k];
-            auto it = idmap.find(id);
-            if (it == idmap.end()) {
-                int newid = i * idscale + idoffset;
-                ids.insert(newid);
-                auto result = idmap.insert({id, { newid } });
-                if (!result.second) {
-                    result.first->second.insert(newid);
-                }
-            } else {
-                for (auto &&newid : it->second) {
-                    ids.insert(newid);
-                }
-            }
-        }
-        T = view_type(strip_qualifier<ViewQualifier>(T), ids);
-    }
-}
-
-//------------------------------------------------------------------------------
-
-void canonicalize_argument_types(Types &types) {
-    ID2SetMap idmap;
-    canonicalize_unique_types(idmap, types, 1);
-}
 
 const Type *raising_function_type(const Type *except_type, const Type *return_type,
     Types argument_types, uint32_t flags) {

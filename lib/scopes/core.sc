@@ -36,6 +36,10 @@ let unroll-limit
 
 let default-target-triple = (sc_default_target_triple)
 
+# stubs
+inline view (...) ...
+inline __drop (value)
+
 # square list expressions are ast unquotes by default
 let square-list = spice-unquote-arguments
 
@@ -981,14 +985,6 @@ inline define-symbols (self values...)
     key-type =
         inline (self key)
             sc_key_type key self
-    unique-type = sc_unique_type
-    view-type =
-        inline (self id)
-            static-branch (none? id)
-                inline ()
-                    sc_view_type self -1
-                inline ()
-                    sc_view_type self id
     refer? = sc_type_is_refer
     variadic? = sc_function_type_is_variadic
     pointer? =

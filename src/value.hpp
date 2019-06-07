@@ -14,8 +14,6 @@
 #include "value_kind.hpp"
 #include "valueref.inc"
 
-#include "qualifier/unique_qualifiers.hpp"
-
 #include <vector>
 #include <unordered_map>
 #include <unordered_set>
@@ -106,7 +104,6 @@ struct TypedValue : Value {
 
     //bool is_typed() const;
     const Type *get_type() const;
-    void hack_change_value(const Type *T);
 
 protected:
     const Type *_type;
@@ -129,13 +126,6 @@ struct Block {
     void insert_at(int index);
     void insert_at_end();
 
-    bool is_valid(int id) const;
-    bool is_valid(const IDSet &ids, int &id) const;
-    bool is_valid(const ValueIndex &value, int &id) const;
-    bool is_valid(const IDSet &ids) const;
-    bool is_valid(const ValueIndex &value) const;
-    void move(int id);
-
     DataMap &get_channel(Symbol name);
 
     std::unordered_map<Symbol, DataMap *, Symbol::Hash> channels;
@@ -145,8 +135,6 @@ struct Block {
     bool tag_traceback;
     Instructions body;
     InstructionRef terminator;
-    // set of unique ids that are still valid in this scope
-    IDSet valid;
 };
 
 //------------------------------------------------------------------------------
@@ -1048,16 +1036,6 @@ struct Const : Pure {
 //------------------------------------------------------------------------------
 
 struct Function : Pure {
-    struct UniqueInfo {
-        ValueIndex value;
-        // at which block depth is the unique defined?
-        int get_depth() const;
-
-        UniqueInfo(const ValueIndex& value);
-    };
-    // map of known uniques within the function (any state)
-    typedef std::unordered_map<int, UniqueInfo> UniqueMap;
-
     static bool classof(const Value *T);
 
     Function(Symbol name, const Parameters &params);
@@ -1073,26 +1051,19 @@ struct Function : Pure {
     bool key_equal(const Function *other) const;
     std::size_t hash() const;
 
-    int unique_id();
-    void bind_unique(const UniqueInfo &info);
-    void try_bind_unique(const TypedValueRef &value);
-    const UniqueInfo &get_unique_info(int id) const;
-    void build_valids();
-
     Symbol name;
     Parameters params;
     Block body;
-    const String *docstring;
+    const String *docstring = nullptr;
     FunctionRef frame;
     FunctionRef boundary;
     TemplateRef original;
     LabelRef label;
-    bool complete;
-    int nextid;
+    bool complete = false;
     const Type *returning_hint;
     const Type *raising_hint;
-    const Anchor *returning_anchor;
-    const Anchor *raising_anchor;
+    const Anchor *returning_anchor = nullptr;
+    const Anchor *raising_anchor = nullptr;
 
     Types instance_args;
     void bind(const ValueRef &oldnode, const TypedValueRef &newnode);
@@ -1103,15 +1074,6 @@ struct Function : Pure {
     std::unordered_map<Value *, TypedValueRef> map;
     Returns returns;
     Raises raises;
-
-    UniqueMap uniques;
-    IDSet original_valid;
-    IDSet valid;
-    // expressions that moved a unique
-    std::unordered_map<int, ValueRef> movers;
-
-    const Anchor *get_best_mover_anchor(int id);
-    void hint_mover(int id, const ValueRef &where);
 };
 
 //------------------------------------------------------------------------------

@@ -2016,24 +2016,6 @@ const sc_type_t *sc_arguments_type_getarg(sc_type_t *T, int index) {
 // Unique Type
 ////////////////////////////////////////////////////////////////////////////////
 
-const sc_type_t *sc_view_type(const sc_type_t *type, int id) {
-    using namespace scopes;
-    if (id < 0)
-        return view_type(type, {});
-    else
-        return view_type(type, { id });
-}
-
-const sc_type_t *sc_unique_type(const sc_type_t *type, int id) {
-    using namespace scopes;
-    return unique_type(type, id);
-}
-
-const sc_type_t *sc_mutate_type(const sc_type_t *type) {
-    using namespace scopes;
-    return mutate_type(type);
-}
-
 const sc_type_t *sc_refer_type(const sc_type_t *type, uint64_t flags, sc_symbol_t storage_class) {
     using namespace scopes;
     return refer_type(type, flags, storage_class);
@@ -2390,9 +2372,6 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_arguments_type_argcount, TYPE_I32, TYPE_Type);
     DEFINE_EXTERN_C_FUNCTION(sc_arguments_type_getarg, TYPE_Type, TYPE_Type, TYPE_I32);
 
-    DEFINE_EXTERN_C_FUNCTION(sc_view_type, TYPE_Type, TYPE_Type, TYPE_I32);
-    DEFINE_EXTERN_C_FUNCTION(sc_unique_type, TYPE_Type, TYPE_Type, TYPE_I32);
-    DEFINE_EXTERN_C_FUNCTION(sc_mutate_type, TYPE_Type, TYPE_Type);
     DEFINE_EXTERN_C_FUNCTION(sc_refer_type, TYPE_Type, TYPE_Type, TYPE_U64, TYPE_Symbol);
     DEFINE_EXTERN_C_FUNCTION(sc_refer_flags, TYPE_U64, TYPE_Type);
     DEFINE_EXTERN_C_FUNCTION(sc_refer_storage_class, TYPE_Symbol, TYPE_Type);

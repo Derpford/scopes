@@ -1287,7 +1287,7 @@ struct LLVMIRGenerator {
         auto callee = call->callee;
         auto &&args = call->args;
 
-        const Type *rtype = strip_lifetime(callee->get_type());
+        const Type *rtype = callee->get_type();
         if (!is_function_pointer(rtype)) {
             SCOPES_ERROR(CGenInvalidCallee, callee->get_type());
         }

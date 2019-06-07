@@ -256,45 +256,11 @@ ASTContext::ASTContext(const FunctionRef &_function, const FunctionRef &_frame,
     except(_except), _break(xbreak), block(_block) {
 }
 
-const Type *ASTContext::fix_merge_type(const Type *T) const {
-    if (!is_returning_value(T))
-        return T;
-    int count = get_argument_count(T);
-    Types newtypes;
-    newtypes.reserve(count);
-    for (int i = 0; i < count; ++i) {
-        auto argT = get_argument(T, i);
-        if (!is_view(argT) && !is_plain(argT)) {
-            argT = unique_type(argT, unique_id());
-        }
-        newtypes.push_back(argT);
-    }
-    return arguments_type(newtypes);
-}
-
-int ASTContext::unique_id() const {
-    return function->unique_id();
-}
-
-void ASTContext::move(int id, const ValueRef &mover) const {
-    block->move(id);
-    function->hint_mover(id, mover);
-}
-
 void ASTContext::merge_block(Block &_block) const {
     block->migrate_from(_block);
 }
 
 SCOPES_RESULT(void) ASTContext::append(const InstructionRef &value) const {
-    SCOPES_RESULT_TYPE(void);
-    assert(block);
-    block->append(value);
-    SCOPES_CHECK_RESULT(tag_instruction(*this, value));
-    function->try_bind_unique(value);
-    return {};
-}
-
-SCOPES_RESULT(void) ASTContext::unchecked_append(const InstructionRef &value) const {
     SCOPES_RESULT_TYPE(void);
     assert(block);
     block->append(value);
@@ -310,7 +276,7 @@ SCOPES_RESULT(InstructionRef) ASTContext::build_deref(const Anchor *anchor,
     const TypedValueRef &value) const {
     SCOPES_RESULT_TYPE(InstructionRef);
     auto op = ref(anchor, RefToPtr::from(value));
-    SCOPES_CHECK_RESULT(unchecked_append(op));
+    SCOPES_CHECK_RESULT(append(op));
     return InstructionRef(anchor, Load::from(op));
 }
 
@@ -318,7 +284,7 @@ SCOPES_RESULT(InstructionRef) ASTContext::build_assign(const Anchor *anchor,
     const TypedValueRef &value, const TypedValueRef &target) const {
     SCOPES_RESULT_TYPE(InstructionRef);
     auto op = ref(anchor, RefToPtr::from(target));
-    SCOPES_CHECK_RESULT(unchecked_append(op));
+    SCOPES_CHECK_RESULT(append(op));
     return InstructionRef(anchor, Store::from(value, op));
 }
 
@@ -326,7 +292,7 @@ SCOPES_RESULT(InstructionRef) ASTContext::build_getelementref(const Anchor *anch
     const TypedValueRef &value, const TypedValues &indices) const {
     SCOPES_RESULT_TYPE(InstructionRef);
     auto op = ref(anchor, RefToPtr::from(value));
-    SCOPES_CHECK_RESULT(unchecked_append(op));
+    SCOPES_CHECK_RESULT(append(op));
     TypedValues idxs;
     idxs.reserve(indices.size() + 1);
     idxs.push_back(ConstInt::from(TYPE_I32, 0));
@@ -334,7 +300,7 @@ SCOPES_RESULT(InstructionRef) ASTContext::build_getelementref(const Anchor *anch
         idxs.push_back(val);
     }
     auto op2 = ref(anchor, GetElementPtr::from(op, idxs));
-    SCOPES_CHECK_RESULT(unchecked_append(op2));
+    SCOPES_CHECK_RESULT(append(op2));
     return InstructionRef(anchor, PtrToRef::from(op2));
 }
 
@@ -342,26 +308,6 @@ SCOPES_RESULT(InstructionRef) ASTContext::build_getelementref(const Anchor *anch
 
 static SCOPES_RESULT(TypedValueRef) prove_inline(const ASTContext &ctx,
     const Closure *cl, const TypedValues &nodes);
-
-static const Type *merge_single_value_type(const char *context, const Type *T1, const Type *T2) {
-    assert(T1);
-    assert(T2);
-    if (T1 == T2)
-        return T1;
-    if (is_unique(T1) && is_unique(T2)
-        && (strip_unique(T1) == strip_unique(T2))) {
-        // return stand-in unique tag
-        return unique_type(T1, UnknownUnique);
-    }
-    auto vq = try_view(T2);
-    // is either value a view?
-    if ((vq || is_view(T1))
-        && (strip_view(T1) == strip_view(T2))) {
-        // merge all ids
-        return vq?view_type(T1, vq->ids):T1;
-    }
-    return nullptr;
-}
 
 static SCOPES_RESULT(const Type *) merge_value_type(
     const char *context, const Type *T1, const Type *T2,
@@ -376,20 +322,6 @@ static SCOPES_RESULT(const Type *) merge_value_type(
         return T2;
     if (!is_returning(T2))
         return T1;
-    auto count = get_argument_count(T1);
-    Types newargs;
-    if (get_argument_count(T2) == count) {
-        for (int i = 0; i < count; ++i) {
-            auto argT1 = get_argument(T1, i);
-            auto argT2 = get_argument(T2, i);
-            const Type *T = merge_single_value_type(context, argT1, argT2);
-            if (!T) {
-                SCOPES_ERROR(MergeConflict, context, T1, T2, A1, A2);
-            }
-            newargs.push_back(T);
-        }
-        return arguments_type(newargs);
-    }
     SCOPES_ERROR(MergeConflict, context, T1, T2, A1, A2);
 }
 
@@ -412,19 +344,7 @@ static bool split_return_values(TypedValues &values, const TypedValueRef &value)
     return true;
 }
 
-void map_arguments_to_block(const ASTContext &ctx, const TypedValueRef &src) {
-    const Type *T = src->get_type();
-    int count = get_argument_count(T);
-    for (int i = 0; i < count; ++i) {
-        auto argT = get_argument(T, i);
-        auto uq = try_unique(argT);
-        if (uq) {
-            ctx.function->bind_unique(Function::UniqueInfo(ValueIndex(src, i)));
-            ctx.block->valid.insert(uq->id);
-        }
-    }
-}
-
+#if 0
 static void write_annotation(const ASTContext &ctx,
     const Anchor *anchor, const String *msg, Values values) {
     values.insert(values.begin(),
@@ -439,376 +359,7 @@ static void write_annotation(const ASTContext &ctx,
         assert(false && "error while annotating");
     }
 }
-
-static SCOPES_RESULT(void) verify_valid(const ASTContext &ctx, int id, const char *by) {
-    SCOPES_RESULT_TYPE(void);
-    if (id == GlobalUnique)
-        return {};
-    if (!ctx.block->is_valid(id)) {
-        auto info = ctx.function->get_unique_info(id);
-        SCOPES_ERROR(InaccessibleValue, info.value.get_type(),
-            ctx.function->get_best_mover_anchor(id));
-    }
-    return {};
-}
-
-static SCOPES_RESULT(void) verify_valid(const ASTContext &ctx, const IDSet &ids, const char *by) {
-    SCOPES_RESULT_TYPE(void);
-    for (auto id : ids) {
-        SCOPES_CHECK_RESULT(verify_valid(ctx, id, by));
-    }
-    return {};
-}
-
-static SCOPES_RESULT(void) verify_valid(const ASTContext &ctx, const TypedValueRef &val, const char *by) {
-    SCOPES_RESULT_TYPE(void);
-    auto T = val->get_type();
-    if (!is_returning_value(T))
-        return {};
-    int id = 0;
-    if (!ctx.block->is_valid(ValueIndex(val), id)) {
-        SCOPES_ERROR(InaccessibleValue, T,
-            ctx.function->get_best_mover_anchor(id));
-    }
-    return {};
-}
-
-static SCOPES_RESULT(void) verify_valid(const ASTContext &ctx, const TypedValues &values, const char *by) {
-    SCOPES_RESULT_TYPE(void);
-    for (auto &&value : values) {
-        SCOPES_TRACE_PROVE_ARG_LIFETIME(value);
-        SCOPES_CHECK_RESULT(verify_valid(ctx, value, by));
-    }
-    return {};
-}
-
-static SCOPES_RESULT(void) build_view(
-    const ASTContext &ctx, const Anchor *anchor, TypedValueRef &val) {
-    SCOPES_RESULT_TYPE(void);
-    auto T = val->get_type();
-    auto uq = try_unique(T);
-    if (uq) {
-        assert(ctx.block->is_valid(ValueIndex(val)));
-        auto retT = view_type(T, {});
-        auto call = ref(anchor, Cast::from(CastBitcast, val, retT));
-        SCOPES_CHECK_RESULT(ctx.append(call));
-        val = call;
-    }
-    return {};
-}
-
-static SCOPES_RESULT(TypedValueRef) build_drop(const ASTContext &ctx,
-    const Anchor *anchor, const ValueIndex &arg) {
-    SCOPES_RESULT_TYPE(TypedValueRef);
-    // generate destructor
-    auto argT = arg.get_type();
-    IDSet ids;
-    auto uq = try_unique(argT);
-    if (uq) {
-        ids.insert(uq->id);
-    } else {
-        auto vq = try_view(argT);
-        if (vq) {
-            ids = vq->ids;
-        }
-    }
-    argT = strip_qualifiers(argT);
-    ValueRef handler;
-    if (!argT->lookup(SYM_DropHandler, handler)) {
-        #if SCOPES_ANNOTATE_TRACKING
-        StyledString ss;
-        ss.out << "forget";
-        write_annotation(ctx, anchor, ss.str(), {
-            ref(anchor, ConstPointer::type_from(arg.get_type())) });
-        #endif
-        return ref(anchor, ArgumentList::from({}));
-    } else {
-        #if SCOPES_ANNOTATE_TRACKING
-        StyledString ss;
-        ss.out << "destruct";
-        write_annotation(ctx, anchor, ss.str(), {
-            ref(anchor, ConstPointer::type_from(arg.get_type())) });
-        #endif
-        auto val = ref(anchor, ExtractArgument::from(arg.value, arg.index));
-        SCOPES_CHECK_RESULT(build_view(ctx, anchor, val));
-        auto expr =
-            ref(anchor, CallTemplate::from(handler, { val }));
-        auto result = SCOPES_GET_RESULT(prove(ctx, expr));
-        auto RT = result->get_type();
-        if (!is_returning(RT) || is_returning_value(RT)) {
-            SCOPES_ERROR(DropReturnsArguments);
-        }
-        SCOPES_CHECK_RESULT(verify_valid(ctx, ids, "drop"));
-        return result;
-    }
-}
-
-static SCOPES_RESULT(void) drop_value(const ASTContext &ctx,
-    const ValueRef &mover, const ValueIndex &arg) {
-    SCOPES_RESULT_TYPE(void);
-    if (ctx.block->is_valid(arg)) {
-        auto anchor = mover.anchor();
-        SCOPES_CHECK_RESULT(build_drop(ctx, anchor, arg));
-        auto argT = arg.get_type();
-        int id = get_unique(argT)->id;
-        #if 0
-        if (needs_autofree(argT)) {
-            build_free(ctx, anchor, ref(anchor, ExtractArgument::from(arg.value, arg.index)));
-        }
-        #endif
-        ctx.move(id, ref(anchor, mover));
-    }
-    return {};
-}
-
-static SCOPES_RESULT(void) build_move(
-    const ASTContext &ctx, const ValueRef &mover, TypedValueRef &val) {
-    SCOPES_RESULT_TYPE(void);
-    assert(ctx.block->is_valid(ValueIndex(val)));
-    auto anchor = mover.anchor();
-    auto T = val->get_type();
-    auto uq = get_unique(T);
-    auto retT = unique_type(T, ctx.unique_id());
-    auto call = ref(anchor, Cast::from(CastBitcast, val, retT));
-    SCOPES_CHECK_RESULT(ctx.append(call));
-    ctx.move(uq->id, mover);
-    val = call;
-    return {};
-}
-
-static SCOPES_RESULT(void) validate_pass_block(const ASTContext &ctx, const Block &src) {
-    SCOPES_RESULT_TYPE(void);
-    // see if pass deleted any values
-    IDSet deleted = difference_idset(ctx.block->valid, src.valid);
-    if (!deleted.empty()) {
-        int id = *deleted.begin();
-        auto info = ctx.function->get_unique_info(id);
-        assert (info.get_depth() < src.depth);
-        SCOPES_ERROR(SwitchPassMovedValue, info.value.get_type());
-    }
-    return {};
-}
-
-static void merge_back_valid(const ASTContext &ctx, IDSet &valid, const ValueRef &mover) {
-    IDSet deleted = difference_idset(ctx.block->valid, valid);
-    for (auto id : deleted) {
-        ctx.move(id, mover);
-        #if SCOPES_ANNOTATE_TRACKING
-        StyledString ss;
-        ss.out << "merge-forgetting " << id;
-        write_annotation(ctx, unknown_anchor(), ss.str(), {});
-        #endif
-    }
-}
-
-// from a parent set of valid values, only keep the ones in both sets
-static void collect_valid_values(const ASTContext &ctx, IDSet &valid) {
-    valid = intersect_idset(valid, ctx.block->valid);
-}
-
-// from a parent set of valid values, only keep the ones in both sets
-static void collect_valid_function_values(const ASTContext &ctx) {
-    ctx.function->valid = intersect_idset(ctx.function->valid, ctx.block->valid);
-}
-
-// check if all merge view arguments are still valid
-static SCOPES_RESULT(void) validate_merge_values(const IDSet &valid, const TypedValues &values) {
-    SCOPES_RESULT_TYPE(void);
-    for (auto &&value : values) {
-        auto vq = try_view(value->get_type());
-        if (!vq) continue;
-        for (auto id : vq->ids) {
-            if (id == GlobalUnique)
-                continue;
-            if (!valid.count(id)) {
-                SCOPES_ERROR(ViewExitingScope, value->get_type());
-            }
-        }
-    }
-    return {};
-}
-
-static void sort_drop_ids(const IDSet &invalid, IDs &drop_ids) {
-    drop_ids.reserve(invalid.size());
-    for (auto id : invalid) {
-        drop_ids.push_back(id);
-    }
-    // drop newest IDs first
-    std::sort(drop_ids.rbegin(), drop_ids.rend());
-}
-
-static SCOPES_RESULT(void) merge_drop_values(const ASTContext &ctx,
-    const ValueRef &mover, const IDs &drop_ids) {
-    SCOPES_RESULT_TYPE(void);
-    auto anchor = mover.anchor();
-    for (auto &&id : drop_ids) {
-        if (!ctx.block->is_valid(id)) // already moved
-            continue;
-        #if SCOPES_ANNOTATE_TRACKING
-        StyledString ss;
-        ss.out << "merge-dropping " << id;
-        write_annotation(ctx, anchor, ss.str(), {});
-        #endif
-        auto info = ctx.function->get_unique_info(id);
-        SCOPES_CHECK_RESULT(drop_value(ctx, mover, info.value));
-    }
-    return {};
-}
-
-static SCOPES_RESULT(void) move_merge_values(const ASTContext &ctx,
-    const ValueRef &mover, int retdepth, TypedValues &values, const char *by) {
-    SCOPES_RESULT_TYPE(void);
-    assert(retdepth >= 0);
-    IDSet saved;
-    for (auto &&value : values) {
-        SCOPES_CHECK_RESULT(verify_valid(ctx, value, by));
-        auto T = value->get_type();
-        auto uq = try_unique(T);
-        if (uq) {
-            auto info = ctx.function->get_unique_info(uq->id);
-            int depth = info.get_depth();
-            if (depth <= retdepth) {
-                // must move
-                SCOPES_CHECK_RESULT(build_move(ctx, mover, value));
-                T = value->get_type();
-                uq = get_unique(T);
-            }
-            // must save
-            saved.insert(uq->id);
-            continue;
-        }
-        auto vq = try_view(T);
-        if (vq) {
-            for (auto &&id : vq->ids) {
-                if (id == GlobalUnique)
-                    continue;
-                auto info = ctx.function->get_unique_info(id);
-                int depth = info.get_depth();
-                if (depth > retdepth) {
-                    // cannot move id of value that is going to be deleted
-                    SCOPES_ERROR(ViewExitingScope, value->get_type());
-                } else {
-                    // will still be live
-                }
-            }
-            continue;
-        }
-    }
-
-    // auto-drop all locally valid uniques
-    Block *block = ctx.block;
-    assert(block);
-    IDSet valid = block->valid;
-    for (auto id : valid) {
-        if (saved.count(id))
-            continue;
-        auto info = ctx.function->get_unique_info(id);
-        if (info.get_depth() <= retdepth)
-            continue;
-        SCOPES_CHECK_RESULT(drop_value(ctx, mover, info.value));
-    }
-
-    return {};
-}
-
-static SCOPES_RESULT(TypedValueRef) move_single_merge_value(const ASTContext &ctx,
-    int retdepth, TypedValueRef result, const char *by) {
-    SCOPES_RESULT_TYPE(TypedValueRef);
-    TypedValues values;
-    if (is_returning_value(result->get_type())
-        && split_return_values(values, result)) {
-        SCOPES_CHECK_RESULT(move_merge_values(ctx, result, retdepth, values, by));
-        result = ref(result.anchor(), ArgumentList::from(values));
-    } else {
-        SCOPES_CHECK_RESULT(move_merge_values(ctx, result, retdepth, values, by));
-    }
-    return result;
-}
-
-// must be called before the return type is computed
-// don't forget to call merge_back_invalid(...) when the label has been added
-SCOPES_RESULT(void) finalize_merges(const ASTContext &ctx,
-    const LabelRef &label, IDSet &valid, const char *by) {
-    SCOPES_RESULT_TYPE(void);
-    valid = ctx.block->valid;
-    // patch merges
-    int retdepth = label->body.depth - 1;
-    for (auto merge : label->merges) {
-        auto mctx = ctx.with_block(*merge->block);
-        assert(merge->block);
-        SCOPES_CHECK_RESULT(move_merge_values(mctx, merge, retdepth,
-            merge->values, by));
-        collect_valid_values(mctx, valid);
-    }
-    // deleted values
-    IDSet deleted = difference_idset(ctx.block->valid, valid);
-    for (auto merge : label->merges) {
-        auto mctx = ctx.with_block(*merge->block);
-        SCOPES_CHECK_RESULT(validate_merge_values(valid, merge->values));
-        // values to drop: deleted values which are still alive in merge block
-        IDSet todrop = intersect_idset(deleted, merge->block->valid);
-        IDs drop_ids;
-        drop_ids.reserve(todrop.size());
-        sort_drop_ids(todrop, drop_ids);
-        SCOPES_CHECK_RESULT(
-            merge_drop_values(mctx, merge, drop_ids));
-    }
-    return {};
-}
-
-SCOPES_RESULT(void) finalize_repeats(const ASTContext &ctx,
-    const LoopLabelRef &label, const char *by) {
-    SCOPES_RESULT_TYPE(void);
-    IDSet valid = ctx.block->valid;
-    // patch repeats
-    int retdepth = label->body.depth - 1;
-    for (auto merge : label->repeats) {
-        auto mctx = ctx.with_block(*merge->block);
-        assert(merge->block);
-        SCOPES_CHECK_RESULT(move_merge_values(mctx,
-            merge, retdepth, merge->values, by));
-        collect_valid_values(mctx, valid);
-    }
-    IDSet deleted = difference_idset(ctx.block->valid, valid);
-    if (!deleted.empty()) {
-        // parent values were deleted, which we can't repeat
-        int id = *deleted.begin();
-        auto info = ctx.function->get_unique_info(id);
-        SCOPES_ERROR(LoopMovedValue, info.value.get_type());
-    }
-    for (auto merge : label->repeats) {
-        SCOPES_CHECK_RESULT(validate_merge_values(valid, merge->values));
-    }
-    return {};
-}
-
-SCOPES_RESULT(void) finalize_returns_raises(const ASTContext &ctx) {
-    SCOPES_RESULT_TYPE(void);
-    const IDSet &valid = ctx.function->valid;
-    IDSet deleted = difference_idset(
-        ctx.function->original_valid, valid);
-    for (auto merge : ctx.function->returns) {
-        auto mctx = ctx.with_block(*merge->block);
-        SCOPES_CHECK_RESULT(validate_merge_values(valid, merge->values));
-        IDSet todrop = intersect_idset(deleted, merge->block->valid);
-        IDs drop_ids;
-        drop_ids.reserve(todrop.size());
-        sort_drop_ids(todrop, drop_ids);
-        SCOPES_CHECK_RESULT(
-            merge_drop_values(mctx, merge, drop_ids));
-    }
-    for (auto merge : ctx.function->raises) {
-        auto mctx = ctx.with_block(*merge->block);
-        SCOPES_CHECK_RESULT(validate_merge_values(valid, merge->values));
-        IDSet todrop = intersect_idset(deleted, merge->block->valid);
-        IDs drop_ids;
-        drop_ids.reserve(todrop.size());
-        sort_drop_ids(todrop, drop_ids);
-        SCOPES_CHECK_RESULT(
-            merge_drop_values(mctx, merge, drop_ids));
-    }
-    return {};
-}
+#endif
 
 static SCOPES_RESULT(TypedValueRef) make_merge1(const ASTContext &ctx, const Anchor *anchor, const LabelRef &label, const TypedValues &values) {
     SCOPES_RESULT_TYPE(TypedValueRef);
@@ -859,9 +410,6 @@ static SCOPES_RESULT(TypedValueRef) make_return1(
     assert(ctx.block);
     assert(ctx.function);
     auto anchor = mover.anchor();
-    SCOPES_CHECK_RESULT(move_merge_values(ctx, mover, 0, values, "return"));
-    collect_valid_function_values(ctx);
-
     auto newreturn = ref(anchor, Return::from(values));
 
     SCOPES_CHECK_RESULT(ctx.append(newreturn));
@@ -886,9 +434,6 @@ static SCOPES_RESULT(TypedValueRef) make_raise1(
     if (ctx.except) {
         return make_merge1(ctx, anchor, ctx.except, values);
     } else {
-        SCOPES_CHECK_RESULT(move_merge_values(ctx, mover, 0, values, "raise"));
-        collect_valid_function_values(ctx);
-
         auto newraise = ref(anchor, Raise::from(values));
 
         SCOPES_CHECK_RESULT(ctx.append(newraise));
@@ -952,8 +497,6 @@ static SCOPES_RESULT(TypedValueRef) prove_LabelTemplate(const ASTContext &ctx, c
     if (label->merges.empty()) {
         // label does not need a merge label
         assert(ctx.block);
-        result = SCOPES_GET_RESULT(
-            move_single_merge_value(labelctx, ctx.block->depth, result, by));
         ctx.merge_block(label->body);
         return result;
     } else {
@@ -967,8 +510,6 @@ static SCOPES_RESULT(TypedValueRef) prove_LabelTemplate(const ASTContext &ctx, c
         }
         #endif
         assert(!label->body.empty());
-        IDSet valid;
-        SCOPES_CHECK_RESULT(finalize_merges(ctx, label, valid, by));
         const Type *rtype = nullptr;
         const Anchor *last_anchor = result.anchor();
         for (auto merge : label->merges) {
@@ -977,9 +518,7 @@ static SCOPES_RESULT(TypedValueRef) prove_LabelTemplate(const ASTContext &ctx, c
                 last_anchor, merge.anchor()));
             last_anchor = merge.anchor();
         }
-        rtype = ctx.fix_merge_type(rtype);
         label->change_type(rtype);
-        merge_back_valid(ctx, valid, label);
         SCOPES_CHECK_RESULT(ctx.append(label));
         return TypedValueRef(label);
     }
@@ -1006,9 +545,6 @@ static SCOPES_RESULT(TypedValueRef) prove_Expression(const ASTContext &ctx,
         } else {
             result = ref(expr.anchor(), ArgumentList::from({}));
         }
-        result = SCOPES_GET_RESULT(
-            move_single_merge_value(subctx, block.depth - 1, result,
-                "expression block"));
         ctx.merge_block(block);
         return result;
     } else {
@@ -1104,23 +640,6 @@ SCOPES_RESULT(void) map_keyed_arguments(const Anchor *anchor, const TypedValueRe
     return {};
 }
 
-static SCOPES_RESULT(TypedValueRef) ensure_tracked(TypedValueRef value) {
-    SCOPES_RESULT_TYPE(TypedValueRef);
-    auto T = value->get_type();
-    if (is_plain(T))
-        return value;
-    auto uq = try_unique(T);
-    if (uq) return value;
-    auto vq = try_view(T);
-    if (vq) return value;
-    if (value.isa<Pure>()) {
-        return TypedValueRef(ref(value.anchor(),
-            PureCast::from(view_type(T, { GlobalUnique }),
-            value.cast<Pure>())));
-    }
-    SCOPES_ERROR(UntrackedType, T);
-}
-
 // used by ArgumentList & Call
 static SCOPES_RESULT(TypedValueRef) prove_arguments(
     const ASTContext &ctx, TypedValues &outargs, const Values &values) {
@@ -1138,20 +657,12 @@ static SCOPES_RESULT(TypedValueRef) prove_arguments(
                 int valcount = get_argument_count(T);
                 for (int j = 0; j < valcount; ++j) {
                     auto elem = ExtractArgument::from(value, j);
-                    {
-                        SCOPES_TRACE_PROVE_ARG(elem);
-                        elem = SCOPES_GET_RESULT(ensure_tracked(elem));
-                    }
                     outargs.push_back(elem);
                 }
                 break;
             } else {
                 value = ExtractArgument::from(value, 0);
             }
-        }
-        {
-            SCOPES_TRACE_PROVE_ARG(value);
-            value = SCOPES_GET_RESULT(ensure_tracked(value));
         }
         outargs.push_back(ref(values[i].anchor(), value));
     }
@@ -1189,14 +700,7 @@ static SCOPES_RESULT(TypedValueRef) prove_Loop(const ASTContext &ctx, const Loop
 
     Types loop_types;
     for (auto &&value : init_values) {
-        SCOPES_CHECK_RESULT(verify_valid(ctx, value, "loop init"));
         auto T = value->get_type();
-        auto uq = try_unique(T);
-        if (uq) {
-            ctx.move(uq->id, loop);
-            // move into loop
-            T = unique_type(T, ctx.unique_id());
-        }
         loop_types.push_back(T);
     }
 
@@ -1207,7 +711,6 @@ static SCOPES_RESULT(TypedValueRef) prove_Loop(const ASTContext &ctx, const Loop
         LoopLabel::from(init_values, loopargs));
     // anchor loop to the local block to avoid it landing in the wrong place
     // ctx.append(newloop);
-    map_arguments_to_block(ctx.with_block(newloop->body), loopargs);
     ctx.frame->bind(loop->args, newloop->args);
 
     auto subctx = ctx.for_loop(newloop);
@@ -1216,7 +719,6 @@ static SCOPES_RESULT(TypedValueRef) prove_Loop(const ASTContext &ctx, const Loop
     //auto rtype = result->get_type();
     SCOPES_CHECK_RESULT(make_repeat(newctx, result.anchor(), newloop, result));
 
-    SCOPES_CHECK_RESULT(finalize_repeats(ctx, newloop, "loop repeat"));
     SCOPES_TRACE_PROVE_EXPR(loop);
 
     const Type *rtype = newloop->args->get_type();
@@ -1525,70 +1027,6 @@ static SCOPES_RESULT(void) verify_real_ops(const Type *a, const Type *b, const T
     return verify(a, c);
 }
 
-static const Type *unique_result_type(const ASTContext &ctx, const Type *T) {
-    T = strip_lifetime(T);
-    if (!is_plain(T)) {
-        return unique_type(T, ctx.unique_id());
-    }
-    return T;
-}
-
-static void collect_view_argument(const ASTContext &ctx, TypedValueRef &arg, IDSet &ids) {
-    auto T = arg->get_type();
-    if (is_unique(T)) {
-        build_view(ctx, arg.anchor(), arg).assert_ok();
-        T = arg->get_type();
-        assert(is_view(T));
-    }
-    auto vq = try_view(T);
-    if (vq) {
-        ids = union_idset(ids, vq->ids);
-    } else {
-        if (!is_plain(T)) {
-            StyledStream ss;
-            ss << "internal error: trying to view " << arg << " but it is untracked" << std::endl;
-        }
-        assert(is_plain(T));
-    }
-}
-
-static const Type *view_result_type(const Type *T, const IDSet &ids) {
-    T = strip_lifetime(T);
-    if (ids.empty()) {
-        if (!is_plain(T)) {
-            StyledStream ss;
-            ss << "internal error: " << T << " has no views" << std::endl;
-        }
-        assert(is_plain(T));
-        return T;
-    }
-    return view_type(T, ids);
-}
-
-static const Type *view_result_type(const ASTContext &ctx, const Type *T,
-    TypedValueRef &arg1) {
-    IDSet ids;
-    collect_view_argument(ctx, arg1, ids);
-    return view_result_type(T, ids);
-}
-
-static const Type *view_result_type(const ASTContext &ctx, const Type *T,
-    TypedValueRef &arg1, TypedValueRef &arg2) {
-    IDSet ids;
-    collect_view_argument(ctx, arg1, ids);
-    collect_view_argument(ctx, arg2, ids);
-    return view_result_type(T, ids);
-}
-
-static const Type *view_result_type(const ASTContext &ctx, const Type *T,
-    TypedValueRef &arg1, TypedValueRef &arg2, TypedValueRef &arg3) {
-    IDSet ids;
-    collect_view_argument(ctx, arg1, ids);
-    collect_view_argument(ctx, arg2, ids);
-    collect_view_argument(ctx, arg3, ids);
-    return view_result_type(T, ids);
-}
-
 static SCOPES_RESULT(void) build_tobool (
     const ASTContext &ctx, const Anchor *anchor, TypedValueRef &val) {
     SCOPES_RESULT_TYPE(void);
@@ -1610,10 +1048,7 @@ static SCOPES_RESULT(void) build_deref(
     auto rq = try_qualifier<ReferQualifier>(T);
     if (rq) {
         SCOPES_CHECK_RESULT(verify_readable(rq, T));
-        auto retT = strip_qualifier<ReferQualifier>(T);
-        retT = view_result_type(ctx, retT, val);
         auto call = SCOPES_GET_RESULT(ctx.build_deref(anchor, val));
-        call->hack_change_value(retT);
         SCOPES_CHECK_RESULT(ctx.append(call));
         val = call;
         return {};
@@ -1621,75 +1056,10 @@ static SCOPES_RESULT(void) build_deref(
     return {};
 }
 
-static SCOPES_RESULT(void) build_deref_move(
-    const ASTContext &ctx, const ValueRef &mover, TypedValueRef &val) {
-    SCOPES_RESULT_TYPE(void);
-    auto anchor = mover.anchor();
-    auto T = val->get_type();
-    if (!is_plain(T)) {
-        auto uq = try_unique(T);
-        if (!uq) {
-            SCOPES_ERROR(UniqueValueExpected, T);
-        }
-    }
-    auto rq = try_qualifier<ReferQualifier>(T);
-    if (rq) {
-        SCOPES_CHECK_RESULT(verify_readable(rq, T));
-        auto retT = strip_qualifier<ReferQualifier>(T);
-        auto call = SCOPES_GET_RESULT(ctx.build_deref(anchor, val));
-        call->hack_change_value(unique_result_type(ctx, retT));
-        SCOPES_CHECK_RESULT(ctx.append(call));
-        auto uq = try_unique(T);
-        if (uq) {
-            ctx.move(uq->id, mover);
-        }
-        val = call;
-    }
-    return {};
-}
-
-static SCOPES_RESULT(void) build_deref_automove(
-    const ASTContext &ctx, const ValueRef &mover, TypedValueRef &val) {
-    SCOPES_RESULT_TYPE(void);
-    auto anchor = mover.anchor();
-    auto T = val->get_type();
-    auto rq = try_qualifier<ReferQualifier>(T);
-    if (rq) {
-        SCOPES_CHECK_RESULT(verify_readable(rq, T));
-        auto retT = strip_qualifier<ReferQualifier>(T);
-        const Type *rtype = nullptr;
-        if (is_unique(T)) {
-            rtype = unique_result_type(ctx, retT);
-        } else if (is_view(T)) {
-            rtype = view_result_type(ctx, retT, val);
-        } else {
-            rtype = retT;
-        }
-        auto call = SCOPES_GET_RESULT(ctx.build_deref(anchor, val));
-        call->hack_change_value(rtype);
-        SCOPES_CHECK_RESULT(ctx.append(call));
-        auto uq = try_unique(T);
-        if (uq) {
-            ctx.move(uq->id, mover);
-        }
-        val = call;
-    }
-    return {};
-}
-
 #define CHECKARGS(MINARGS, MAXARGS) \
     SCOPES_CHECK_RESULT((checkargs<MINARGS, MAXARGS>(argcount)))
-#define UNIQUETYPE1(ARGT) unique_result_type(ctx, ARGT)
-#define UNIQUETYPE2(ARGT1, ARGT2) arguments_type({ \
-    unique_result_type(ctx, ARGT1), \
-    unique_result_type(ctx, ARGT2)})
-#define VIEWTYPE1(ARGT, ...) view_result_type(ctx, ARGT, __VA_ARGS__)
 #define DEREF(NAME) \
         SCOPES_CHECK_RESULT(build_deref(ctx, call.anchor(), NAME));
-#define MOVE_DEREF(NAME) \
-        SCOPES_CHECK_RESULT(build_deref_move(ctx, call, NAME));
-#define AUTOMOVE_DEREF(NAME) \
-        SCOPES_CHECK_RESULT(build_deref_automove(ctx, call, NAME));
 #define READ_VALUE(NAME) \
         assert(argn < argcount); \
         auto && NAME = values[argn++]; \
@@ -1750,42 +1120,6 @@ static SCOPES_RESULT(void) build_deref_automove(
         auto &&_ ## NAME = values[argn++]; \
         auto NAME = SCOPES_GET_RESULT(extract_symbol_constant(_ ## NAME));
 
-static const Type *canonical_return_type(const FunctionRef &fn, const Type *rettype,
-    bool is_except = false) {
-    if (!is_returning_value(rettype))
-        return rettype;
-    std::unordered_map<int, int> idmap;
-    Types rettypes;
-    int acount = get_argument_count(rettype);
-    for (int i = 0; i < acount; ++i) {
-        auto T = get_argument(rettype, i);
-        auto uq = try_qualifier<UniqueQualifier>(T);
-        if (uq) {
-            int newid = (is_except?FirstUniqueError:FirstUniqueOutput) - i;
-            idmap.insert({uq->id, newid});
-            T = unique_type(T, newid);
-        }
-        rettypes.push_back(T);
-    }
-    for (int i = 0; i < acount; ++i) {
-        auto &&T = rettypes[i];
-        auto vq = try_qualifier<ViewQualifier>(T);
-        if (vq) {
-            IDSet ids;
-            for (auto id : vq->ids) {
-                auto it = idmap.find(id);
-                if (it != idmap.end()) {
-                    ids.insert(it->second);
-                } else {
-                    ids.insert(id);
-                }
-            }
-            T = view_type(strip_qualifier<ViewQualifier>(T), ids);
-        }
-    }
-    return arguments_type(rettypes);
-}
-
 static SCOPES_RESULT(const Type *) get_function_type(const FunctionRef &fn) {
     SCOPES_RESULT_TYPE(const Type *);
 
@@ -1795,12 +1129,6 @@ static SCOPES_RESULT(const Type *) get_function_type(const FunctionRef &fn) {
     for (int i = 0; i < fn->params.size(); ++i) {
         auto param = fn->params[i];
         auto T = param->get_type();
-        auto uq = try_unique(T);
-        if (uq && fn->valid.count(uq->id)) {
-            // has this parameter been spent? if not, it's a view
-            T = view_type(T, {});
-            param->retype(T);
-        }
         params.push_back(T);
     }
 
@@ -1813,7 +1141,6 @@ static SCOPES_RESULT(const Type *) get_function_type(const FunctionRef &fn) {
             last_anchor, _return.anchor()));
         last_anchor = _return.anchor();
     }
-    rettype = canonical_return_type(fn, rettype);
     const Type *raisetype = fn->raising_hint;
     last_anchor =
         fn->raising_anchor?fn->raising_anchor:fn.anchor();
@@ -1823,7 +1150,6 @@ static SCOPES_RESULT(const Type *) get_function_type(const FunctionRef &fn) {
             last_anchor, _raise.anchor()));
         last_anchor = _raise.anchor();
     }
-    raisetype = canonical_return_type(fn, raisetype, true);
 
     return native_opaque_pointer_type(raising_function_type(raisetype, rettype, params));
 }
@@ -1895,52 +1221,6 @@ SCOPES_RESULT(void) sanitize_tuple_index(const Anchor *anchor, const Type *ST,
     return {};
 }
 
-// if it's legal to make a starting copy of this value
-static bool is_template_like_constant(const TypedValueRef &value) {
-    if (value.isa<Undef>()) return true;
-    if (value.isa<Const>()) return true;
-    return false;
-}
-
-const Type *remap_unique_return_arguments(
-    const ASTContext &ctx, ID2SetMap &idmap, const Type *rt) {
-    if (is_returning_value(rt)) {
-        // remap return type
-        int acount = get_argument_count(rt);
-        Types rettypes;
-        rettypes.reserve(acount);
-        for (int i = 0; i < acount; ++i) {
-            const Type *argT = get_argument(rt, i);
-            auto uq = try_unique(argT);
-            if (uq) {
-                auto newid = ctx.unique_id();
-                argT = unique_type(argT, newid);
-                map_unique_id(idmap, uq->id, newid);
-            } else {
-                auto vq = try_view(argT);
-                if (vq) {
-                    IDSet newids;
-                    for (auto vid : vq->ids) {
-                        if (vid == GlobalUnique) {
-                            newids.insert(GlobalUnique);
-                        } else {
-                            auto it = idmap.find(vid);
-                            assert(it != idmap.end());
-                            for (auto destid : it->second) {
-                                newids.insert(destid);
-                            }
-                        }
-                    }
-                    argT = view_type(strip_view(argT), newids);
-                }
-            }
-            rettypes.push_back(argT);
-        }
-        rt = arguments_type(rettypes);
-    }
-    return rt;
-}
-
 static SCOPES_RESULT(TypedValueRef) prove_CallTemplate(
     const ASTContext &ctx, const CallTemplateRef &call) {
     SCOPES_RESULT_TYPE(TypedValueRef);
@@ -1955,7 +1235,6 @@ static SCOPES_RESULT(TypedValueRef) prove_CallTemplate(
     bool rawcall = call->is_rawcall();
     int redirections = 0;
 repeat:
-    SCOPES_CHECK_RESULT(verify_valid(ctx, callee, "callee"));
     const Type *T = strip_qualifiers(callee->get_type());
     if (!rawcall) {
         assert(redirections < 16);
@@ -1975,7 +1254,6 @@ repeat:
         keys_from_function_type(keys, extract_function_type(T));
         SCOPES_CHECK_RESULT(map_keyed_arguments(call.anchor(), callee, args, values, keys, false));
         values = args;
-        SCOPES_CHECK_RESULT(verify_valid(ctx, values, "function call"));
     } else if (T == TYPE_Closure) {
         const Closure *cl = SCOPES_GET_RESULT((extract_closure_constant(callee)));
         {
@@ -1990,7 +1268,6 @@ repeat:
         if (cl->func->is_inline()) {
             return SCOPES_GET_RESULT(prove_inline(ctx, cl, values));
         } else {
-            SCOPES_CHECK_RESULT(verify_valid(ctx, values, "call"));
             Types types;
             for (auto &&arg : values) {
                 auto AT = arg->get_type();
@@ -2032,28 +1309,8 @@ repeat:
         Builtin b = SCOPES_GET_RESULT(extract_builtin_constant(callee));
         size_t argcount = values.size();
         size_t argn = 0;
-        if (b.value() == FN_IsValid) {
-            CHECKARGS(1, 1);
-            bool valid = ctx.block->is_valid(ValueIndex(values[0]));
-            return TypedValueRef(call.anchor(), ConstInt::from(TYPE_Bool, valid));
-        }
-        if (b != FN_IsDropped) {
-            SCOPES_CHECK_RESULT(verify_valid(ctx, values, "builtin call"));
-        }
         switch(b.value()) {
         /*** DEBUGGING ***/
-        case FN_DumpUniques: {
-            StyledStream ss(SCOPES_CERR);
-            ss << call.anchor() << " dump-uniques:";
-            for (auto id : ctx.block->valid) {
-                ss << " ";
-                ss << id;
-                auto info = ctx.function->get_unique_info(id);
-                ss << "[" << info.get_depth() << "](" << info.value << ")";
-            }
-            ss << std::endl;
-            return ref(call.anchor(), ArgumentList::from(values));
-        } break;
         case FN_Dump: {
             StyledStream ss(SCOPES_CERR);
             ss << call.anchor() << " dump:";
@@ -2101,81 +1358,6 @@ repeat:
         case FN_HideTraceback: {
             CHECKARGS(0, 0);
             ctx.block->tag_traceback = false;
-            return ref(call.anchor(), ArgumentList::from({}));
-        } break;
-        /*** VIEW INFERENCE ***/
-        case FN_Move: {
-            CHECKARGS(1, 1);
-            READ_NODEREF_TYPEOF(X);
-            if (is_template_like_constant(_X)) return _X;
-            auto uq = try_unique(X);
-            if (!uq) {
-                SCOPES_ERROR(UniqueValueExpected, _X->get_type());
-            }
-            SCOPES_CHECK_RESULT(build_move(ctx, call, _X));
-            return _X;
-        } break;
-        case FN_View: {
-            CHECKARGS(0, -1);
-            while (argn < argcount) {
-                READ_NODEREF_TYPEOF(X);
-                auto uq = try_unique(X);
-                if (!uq) {
-                    // no effect
-                    continue;
-                }
-                SCOPES_CHECK_RESULT(build_view(ctx, call.anchor(), _X));
-            }
-            return ref(call.anchor(), ArgumentList::from(values));
-        } break;
-        case FN_Dupe: {
-            CHECKARGS(1, 1);
-            READ_NODEREF_TYPEOF(X);
-            const Type *DestT = strip_lifetime(X);
-            auto op = Cast::from(CastBitcast, _X, DestT);
-            if (is_plain(X)) {
-                return TypedValueRef(call.anchor(), op);
-            } else {
-                auto uq = try_unique(X);
-                if (uq) {
-                    ctx.move(uq->id, call);
-                }
-                op->hack_change_value(UNIQUETYPE1(op->get_type()));
-                return TypedValueRef(call.anchor(), op);
-            }
-        } break;
-        case SYM_DropHandler: {
-            CHECKARGS(1, 1);
-            READ_NODEREF_TYPEOF(X);
-            (void)X;
-            return SCOPES_GET_RESULT(build_drop(ctx, call.anchor(), _X));
-        } break;
-        case FN_Lose: {
-            CHECKARGS(1, 1);
-            READ_NODEREF_TYPEOF(X);
-            if (!is_plain(X)) {
-                auto uq = try_unique(X);
-                if (!uq) {
-                    SCOPES_ERROR(UniqueValueExpected, _X->get_type());
-                }
-                ctx.move(uq->id, call);
-            }
-            return ref(call.anchor(), ArgumentList::from({}));
-        } break;
-        case FN_IsDropped: {
-            CHECKARGS(1, 1);
-            bool valid = ctx.block->is_valid(ValueIndex(values[0]));
-            return TypedValueRef(ref(call.anchor(), ConstInt::from(TYPE_Bool, !valid)));
-        } break;
-        case FN_Viewing: {
-            for (size_t i = 0; i < values.size(); ++i) {
-                READ_NODEREF_VALUE(value);
-                auto param = value.dyn_cast<Parameter>();
-                if (!param) {
-                    SCOPES_ERROR(ValueKindMismatch, VK_Parameter, value->kind());
-                }
-                param->retype(view_type(param->get_type(), {}));
-            }
             return ref(call.anchor(), ArgumentList::from({}));
         } break;
         case FN_Returning: {
@@ -2249,9 +1431,7 @@ repeat:
                 Symbol key = type_key(val->get_type())._0;
                 opts.push_back(Sample::Option(key, val));
             }
-            auto op = Sample::from(_ST, _coords, opts);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _ST));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Sample::from(_ST, _coords, opts));
         } break;
         case FN_ImageQuerySize: {
             CHECKARGS(1, -1);
@@ -2269,9 +1449,7 @@ repeat:
                     lod = val;
                 }
             }
-            auto op = ImageQuerySize::from(_ST, lod);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _ST));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), ImageQuerySize::from(_ST, lod));
         } break;
         case FN_ImageQueryLod: {
             CHECKARGS(2, 2);
@@ -2283,9 +1461,7 @@ repeat:
                 ST = SCOPES_GET_RESULT(storage_type(sit->type));
             }
             SCOPES_CHECK_RESULT(verify_kind<TK_Image>(ST));
-            auto op = ImageQueryLod::from(_ST, _coords);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _ST));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), ImageQueryLod::from(_ST, _coords));
         } break;
         case FN_ImageQueryLevels:
         case FN_ImageQuerySamples: {
@@ -2302,7 +1478,6 @@ repeat:
             } else {
                 op = TypedValueRef(call.anchor(), ImageQuerySamples::from(_ST));
             }
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _ST));
             return op;
         } break;
         case FN_ImageRead: {
@@ -2311,9 +1486,7 @@ repeat:
             READ_STORAGETYPEOF(coords);
             (void)coords;
             SCOPES_CHECK_RESULT(verify_kind<TK_Image>(ST));
-            auto op = ImageRead::from(_ST, _coords);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _ST));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), ImageRead::from(_ST, _coords));
         } break;
         case FN_ImageWrite: {
             CHECKARGS(3, 3);
@@ -2323,8 +1496,7 @@ repeat:
             READ_STORAGETYPEOF(texel);
             (void)texel;
             SCOPES_CHECK_RESULT(verify_kind<TK_Image>(ST));
-            auto op = ImageWrite::from(_ST, _coords, _texel);
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), ImageWrite::from(_ST, _coords, _texel));
         } break;
         case SFXFN_ExecutionMode: {
             CHECKARGS(1, 4);
@@ -2404,9 +1576,7 @@ repeat:
                 auto ST2 = SCOPES_GET_RESULT(storage_type(T2));
                 SCOPES_CHECK_RESULT(verify_vector_sizes(T1, ST2));
             }
-            auto op = Select::from(_T1, _T2, _T3);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _T1, _T2, _T3));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Select::from(_T1, _T2, _T3));
         } break;
         case FN_Bitcast: {
             CHECKARGS(2, 2);
@@ -2434,25 +1604,12 @@ repeat:
                 }
 
                 DestT = strip_qualifiers(DestT);
-                bool target_is_plain = is_plain(DestT);
-
-                if (is_view(SrcT)) {
-                    DestT = view_result_type(ctx, DestT, _SrcT);
-                } else if (!target_is_plain) {
-                    DestT = unique_result_type(ctx, DestT);
-                }
-
-                auto uq = try_unique(SrcT);
-                if (uq) {
-                    ctx.move(uq->id, call);
-                }
 
                 auto rq = try_qualifier<ReferQualifier>(SrcT);
                 if (rq) {
                     DestT = qualify(DestT, { rq });
                 }
-                //_DestT = ref(_DestT.anchor(), ConstPointer::type_from(DestT));
-                if (_SrcT.isa<Pure>() && target_is_plain) {
+                if (_SrcT.isa<Pure>()) {
                     return TypedValueRef(ref(call.anchor(),
                         PureCast::from(DestT, _SrcT.cast<Pure>())));
                 } else {
@@ -2468,7 +1625,7 @@ repeat:
             READ_TYPE_CONST(DestT);
             SCOPES_CHECK_RESULT(verify_integer(T));
             SCOPES_CHECK_RESULT((verify_kind<TK_Pointer>(SCOPES_GET_RESULT(storage_type(DestT)))));
-            return TypedValueRef(call.anchor(), Cast::from(CastIntToPtr, _T, VIEWTYPE1(DestT, _T)));
+            return TypedValueRef(call.anchor(), Cast::from(CastIntToPtr, _T, DestT));
         } break;
         case FN_PtrToInt: {
             CHECKARGS(2, 2);
@@ -2476,7 +1633,7 @@ repeat:
             READ_TYPE_CONST(DestT);
             SCOPES_CHECK_RESULT(verify_kind<TK_Pointer>(T));
             SCOPES_CHECK_RESULT(verify_integer(SCOPES_GET_RESULT(storage_type(DestT))));
-            return TypedValueRef(call.anchor(), Cast::from(CastPtrToInt, _T, VIEWTYPE1(DestT, _T)));
+            return TypedValueRef(call.anchor(), Cast::from(CastPtrToInt, _T, DestT));
         } break;
         case FN_ITrunc: {
             CHECKARGS(2, 2);
@@ -2484,7 +1641,7 @@ repeat:
             READ_TYPE_CONST(DestT);
             SCOPES_CHECK_RESULT(verify_integer(T));
             SCOPES_CHECK_RESULT(verify_integer(SCOPES_GET_RESULT(storage_type(DestT))));
-            return TypedValueRef(call.anchor(), Cast::from(CastITrunc, _T, VIEWTYPE1(DestT, _T)));
+            return TypedValueRef(call.anchor(), Cast::from(CastITrunc, _T, DestT));
         } break;
         case FN_FPTrunc: {
             CHECKARGS(2, 2);
@@ -2495,7 +1652,7 @@ repeat:
             if (cast<RealType>(T)->width < cast<RealType>(DestT)->width) {
                 SCOPES_ERROR(InvalidOperands, b, T, DestT);
             }
-            return TypedValueRef(call.anchor(), Cast::from(CastFPTrunc, _T, VIEWTYPE1(DestT, _T)));
+            return TypedValueRef(call.anchor(), Cast::from(CastFPTrunc, _T, DestT));
         } break;
         case FN_FPExt: {
             CHECKARGS(2, 2);
@@ -2506,7 +1663,7 @@ repeat:
             if (cast<RealType>(T)->width > cast<RealType>(DestT)->width) {
                 SCOPES_ERROR(InvalidOperands, b, T, DestT);
             }
-            return TypedValueRef(call.anchor(), Cast::from(CastFPExt, _T, VIEWTYPE1(DestT, _T)));
+            return TypedValueRef(call.anchor(), Cast::from(CastFPExt, _T, DestT));
         } break;
         case FN_FPToUI:
         case FN_FPToSI: {
@@ -2523,9 +1680,9 @@ repeat:
             }
             #endif
             if (b.value() == FN_FPToUI) {
-                return TypedValueRef(call.anchor(), Cast::from(CastFPToUI, _T, VIEWTYPE1(DestT, _T)));
+                return TypedValueRef(call.anchor(), Cast::from(CastFPToUI, _T, DestT));
             } else {
-                return TypedValueRef(call.anchor(), Cast::from(CastFPToSI, _T, VIEWTYPE1(DestT, _T)));
+                return TypedValueRef(call.anchor(), Cast::from(CastFPToSI, _T, DestT));
             }
         } break;
         case FN_UIToFP:
@@ -2543,9 +1700,9 @@ repeat:
             }
             #endif
             if (b.value() == FN_UIToFP) {
-                return TypedValueRef(call.anchor(), Cast::from(CastUIToFP, _T, VIEWTYPE1(DestT, _T)));
+                return TypedValueRef(call.anchor(), Cast::from(CastUIToFP, _T, DestT));
             } else {
-                return TypedValueRef(call.anchor(), Cast::from(CastSIToFP, _T, VIEWTYPE1(DestT, _T)));
+                return TypedValueRef(call.anchor(), Cast::from(CastSIToFP, _T, DestT));
             }
         } break;
         case FN_ZExt:
@@ -2556,9 +1713,9 @@ repeat:
             SCOPES_CHECK_RESULT(verify_integer(T));
             SCOPES_CHECK_RESULT(verify_integer(SCOPES_GET_RESULT(storage_type(DestT))));
             if (b.value() == FN_ZExt) {
-                return TypedValueRef(call.anchor(), Cast::from(CastZExt, _T, VIEWTYPE1(DestT, _T)));
+                return TypedValueRef(call.anchor(), Cast::from(CastZExt, _T, DestT));
             } else {
-                return TypedValueRef(call.anchor(), Cast::from(CastSExt, _T, VIEWTYPE1(DestT, _T)));
+                return TypedValueRef(call.anchor(), Cast::from(CastSExt, _T, DestT));
             }
         } break;
         case FN_ExtractElement: {
@@ -2569,17 +1726,11 @@ repeat:
             SCOPES_CHECK_RESULT(verify_integer(idx));
             auto rq = try_qualifier<ReferQualifier>(typeof_T);
             if (rq) {
-                auto op = TypedValueRef(call.anchor(),
+                return TypedValueRef(call.anchor(),
                     SCOPES_GET_RESULT(ctx.build_getelementref(call.anchor(), _T, { _idx })));
-                const Type *retT = view_result_type(ctx,
-                    qualify(op->get_type(), { rq }), _T, _idx);
-                op->hack_change_value(retT);
-                return op;
             } else {
-                auto op = TypedValueRef(call.anchor(),
+                return TypedValueRef(call.anchor(),
                     ExtractElement::from(_T, _idx));
-                op->hack_change_value(VIEWTYPE1(op->get_type(), _T, _idx));
-                return op;
             }
         } break;
         case FN_InsertElement: {
@@ -2591,10 +1742,8 @@ repeat:
             SCOPES_CHECK_RESULT(verify_kind<TK_Vector>(T));
             auto vi = cast<VectorType>(T);
             SCOPES_CHECK_RESULT(verify(SCOPES_GET_RESULT(storage_type(vi->element_type)), ET));
-            auto op = TypedValueRef(call.anchor(),
+            return TypedValueRef(call.anchor(),
                 InsertElement::from(_T, _ET, _idx));
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _T, _ET, _idx));
-            return op;
         } break;
         case FN_ShuffleVector: {
             CHECKARGS(3, 3);
@@ -2618,26 +1767,20 @@ repeat:
                 SCOPES_CHECK_RESULT(verify_range(k, incount));
                 outmask.push_back(k);
             }
-            auto op = TypedValueRef(call.anchor(),
+            return TypedValueRef(call.anchor(),
                 ShuffleVector::from(_TV1, _TV2, outmask));
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _TV1, _TV2));
-            return op;
         } break;
         case FN_Length: {
             CHECKARGS(1, 1);
             READ_STORAGETYPEOF(T);
             SCOPES_CHECK_RESULT(verify_real_vector(T));
-            auto op = UnOp::from(UnOpLength, _T);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _T));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), UnOp::from(UnOpLength, _T));
         } break;
         case FN_Normalize: {
             CHECKARGS(1, 1);
             READ_TYPEOF(A);
             SCOPES_CHECK_RESULT(verify_real_ops(A));
-            auto op = UnOp::from(UnOpNormalize, _A);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), UnOp::from(UnOpNormalize, _A));
         } break;
         case FN_Cross: {
             CHECKARGS(2, 2);
@@ -2645,9 +1788,7 @@ repeat:
             READ_TYPEOF(B);
             SCOPES_CHECK_RESULT(verify_real_vector(A, 3));
             SCOPES_CHECK_RESULT(verify(typeof_A, B));
-            auto op = BinOp::from(BinOpCross, _A, _B);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), BinOp::from(BinOpCross, _A, _B));
         } break;
         case FN_ExtractValue: {
             CHECKARGS(2, 2);
@@ -2679,28 +1820,18 @@ repeat:
             }
             auto rq = try_qualifier<ReferQualifier>(typeof_T);
             if (rq) {
-                auto op = TypedValueRef(call.anchor(),
+                return TypedValueRef(call.anchor(),
                     SCOPES_GET_RESULT(ctx.build_getelementref(call.anchor(), _T, { _idx })));
-                auto retT = view_result_type(ctx, qualify(op->get_type(), { rq }), _T);
-                op->hack_change_value(retT);
-                return op;
             } else {
                 assert(iidx != -1ull);
-                auto op = ExtractValue::from(_T, iidx);
-                op->hack_change_value(VIEWTYPE1(op->get_type(), _T));
-                return TypedValueRef(call.anchor(), op);
+                return TypedValueRef(call.anchor(), ExtractValue::from(_T, iidx));
             }
         } break;
         case FN_InsertValue: {
             CHECKARGS(3, 3);
-            READ_AUTOMOVE_TYPEOF(AT);
-            READ_AUTOMOVE_STORAGETYPEOF(ET);
+            READ_TYPEOF(AT);
+            READ_STORAGETYPEOF(ET);
             READ_INT_CONST(idx);
-            bool movable = is_template_like_constant(_AT)
-                || is_movable(AT);
-            if (movable != is_movable(typeof_ET)) {
-                SCOPES_ERROR(MovableTypeMismatch, AT, typeof_ET);
-            }
             auto T = SCOPES_GET_RESULT(storage_type(AT));
             switch(T->kind()) {
             case TK_Array: {
@@ -2715,17 +1846,7 @@ repeat:
                 SCOPES_ERROR(InvalidArgumentTypeForBuiltin, b, T);
             } break;
             }
-            auto op = InsertValue::from(_AT, _ET, idx);
-            if (movable) {
-                auto uq_AT = try_unique(AT);
-                if (uq_AT) ctx.move(uq_AT->id, call);
-                auto uq_ET = try_unique(typeof_ET);
-                if (uq_ET) ctx.move(uq_ET->id, call);
-                op->hack_change_value(UNIQUETYPE1(op->get_type()));
-            } else {
-                op->hack_change_value(VIEWTYPE1(op->get_type(), _AT, _ET));
-            }
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), InsertValue::from(_AT, _ET, idx));
         } break;
         case FN_GetElementRef:
         case FN_GetElementPtr: {
@@ -2785,18 +1906,17 @@ repeat:
             } else {
                 op = GetElementPtr::from(dep, indices);
             }
-            op->hack_change_value(VIEWTYPE1(op->get_type(), dep));
             return TypedValueRef(call.anchor(), op);
         } break;
         case FN_Deref: {
             CHECKARGS(1, 1);
-            READ_AUTOMOVE_TYPEOF(T);
+            READ_TYPEOF(T);
             (void)T;
             return _T;
         } break;
         case FN_Assign: {
             CHECKARGS(2, 2);
-            READ_MOVE_STORAGETYPEOF(ElemT);
+            READ_STORAGETYPEOF(ElemT);
             READ_NODEREF_STORAGETYPEOF(DestT);
             {
                 SCOPES_TRACE_PROVE_ARG(_DestT);
@@ -2810,59 +1930,28 @@ repeat:
             //strip_qualifiers(DestT);
 
             SCOPES_CHECK_RESULT(verify(ElemT, DestT));
-
-            if (!is_plain(typeof_ElemT)) {
-                auto uq = try_unique(typeof_ElemT);
-                if (!uq) {
-                    SCOPES_ERROR(UniqueValueExpected, _ElemT->get_type());
-                }
-                ctx.move(uq->id, call);
-            }
             return TypedValueRef(SCOPES_GET_RESULT(ctx.build_assign(call.anchor(), _ElemT, _DestT)));
         } break;
         case FN_PtrToRef: {
             CHECKARGS(1, 1);
-            READ_AUTOMOVE_TYPEOF(T);
+            READ_TYPEOF(T);
             auto NT = SCOPES_GET_RESULT(ptr_to_ref(T));
             if (_T.isa<Pure>()) {
-                if (!is_plain(T)) {
-                    NT = view_type(NT, { GlobalUnique });
-                }
                 return TypedValueRef(
                     ref(call.anchor(), PureCast::from(NT, _T.cast<Pure>())));
             } else {
-                auto uq = try_unique(T);
-                if (uq) {
-                    ctx.move(uq->id, call);
-                }
-                auto op = PtrToRef::from(_T);
-                if (is_movable(T)) {
-                    op->hack_change_value(UNIQUETYPE1(op->get_type()));
-                } else {
-                    op->hack_change_value(VIEWTYPE1(op->get_type(), _T));
-                }
-                return TypedValueRef(call.anchor(), op);
+                return TypedValueRef(call.anchor(), PtrToRef::from(_T));
             }
         } break;
         case FN_RefToPtr: {
             CHECKARGS(1, 1);
             READ_NODEREF_TYPEOF(T);
             auto NT = SCOPES_GET_RESULT(ref_to_ptr(T));
-            if (is_plain(T) && _T.isa<Pure>()) {
+            if (_T.isa<Pure>()) {
                 return TypedValueRef(
                     ref(call.anchor(), PureCast::from(NT, _T.cast<Pure>())));
             } else {
-                auto uq = try_unique(T);
-                if (uq) {
-                    ctx.move(uq->id, call);
-                }
-                auto op = RefToPtr::from(_T);
-                if (is_movable(T)) {
-                    op->hack_change_value(UNIQUETYPE1(op->get_type()));
-                } else {
-                    op->hack_change_value(VIEWTYPE1(op->get_type(), _T));
-                }
-                return TypedValueRef(call.anchor(), op);
+                return TypedValueRef(call.anchor(), RefToPtr::from(_T));
             }
         } break;
         case FN_VolatileLoad:
@@ -2871,9 +1960,7 @@ repeat:
             READ_STORAGETYPEOF(T);
             SCOPES_CHECK_RESULT(verify_kind<TK_Pointer>(T));
             SCOPES_CHECK_RESULT(verify_readable(T));
-            auto op = Load::from(_T, b.value() == FN_VolatileLoad);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _T));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Load::from(_T, b.value() == FN_VolatileLoad));
         } break;
         case FN_VolatileStore:
         case FN_Store: {
@@ -2885,60 +1972,38 @@ repeat:
             auto pi = cast<PointerType>(DestT);
             SCOPES_CHECK_RESULT(
                 verify(SCOPES_GET_RESULT(storage_type(pi->element_type)), ElemT));
-            if (!is_plain(typeof_DestT)) {
-                auto uq = try_unique(typeof_ElemT);
-                if (!uq) {
-                    SCOPES_ERROR(UniqueValueExpected, _ElemT->get_type());
-                }
-                ctx.move(uq->id, call);
-            }
-            auto op = Store::from(_ElemT, _DestT, b.value() == FN_VolatileStore);
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Store::from(_ElemT, _DestT, b.value() == FN_VolatileStore));
         } break;
         case FN_Alloca: {
             CHECKARGS(1, 1);
             READ_TYPE_CONST(T);
-            auto op = Alloca::from(T);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Alloca::from(T));
         } break;
         case FN_AllocaArray: {
             CHECKARGS(2, 2);
             READ_TYPE_CONST(T);
             READ_STORAGETYPEOF(size);
             SCOPES_CHECK_RESULT(verify_integer(size));
-            auto op = Alloca::from(T, _size);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Alloca::from(T, _size));
         } break;
         case FN_Malloc: {
             CHECKARGS(1, 1);
             READ_TYPE_CONST(T);
-            auto op = Malloc::from(T);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Malloc::from(T));
         } break;
         case FN_MallocArray: {
             CHECKARGS(2, 2);
             READ_TYPE_CONST(T);
             READ_STORAGETYPEOF(size);
             SCOPES_CHECK_RESULT(verify_integer(size));
-            auto op = Malloc::from(T, _size);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), Malloc::from(T, _size));
         } break;
         case FN_Free: {
             CHECKARGS(1, 1);
-            READ_AUTOMOVE_STORAGETYPEOF(T);
+            READ_STORAGETYPEOF(T);
             //SCOPES_CHECK_RESULT(verify_writable(T));
             if (cast<PointerType>(T)->storage_class != SYM_Unnamed) {
                 SCOPES_ERROR(InvalidArgumentTypeForBuiltin, b, T);
-            }
-            if (!is_plain(T)) {
-                auto uq = try_unique(T);
-                if (uq) {
-                    ctx.move(uq->id, call);
-                }
             }
             return TypedValueRef(call.anchor(), Free::from(_T));
         } break;
@@ -2962,9 +2027,7 @@ repeat:
             #undef T
             default: assert(false); break;
             }
-            auto op = ICmp::from(pred, _A, _B);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A, _B));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), ICmp::from(pred, _A, _B));
         } break;
         case OP_FCmpOEQ:
         case OP_FCmpONE:
@@ -2990,9 +2053,7 @@ repeat:
             #undef T
             default: assert(false); break;
             }
-            auto op = FCmp::from(pred, _A, _B);
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A, _B));
-            return TypedValueRef(call.anchor(), op);
+            return TypedValueRef(call.anchor(), FCmp::from(pred, _A, _B));
         } break;
 #define IARITH_NUW_NSW_OPS(NAME) \
         case OP_ ## NAME: \
@@ -3008,54 +2069,42 @@ repeat:
             case OP_ ## NAME ## NSW: opkind = BinOp ## NAME ## NSW; break; \
             default: break; \
             } \
-            auto op = BinOp::from(opkind, _A, _B); \
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A, _B)); \
-            return TypedValueRef(call.anchor(), op); \
+            return TypedValueRef(call.anchor(), BinOp::from(opkind, _A, _B)); \
         } break;
 #define IARITH_OP(NAME, PFX) \
         case OP_ ## NAME: { \
             CHECKARGS(2, 2); \
             READ_TYPEOF(A); READ_TYPEOF(B); \
             SCOPES_CHECK_RESULT(verify_integer_ops(A, B)); \
-            auto op = BinOp::from(BinOp ## NAME, _A, _B); \
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A, _B)); \
-            return TypedValueRef(call.anchor(), op); \
+            return TypedValueRef(call.anchor(), BinOp::from(BinOp ## NAME, _A, _B)); \
         } break;
 #define FARITH_OP(NAME) \
         case OP_ ## NAME: { \
             CHECKARGS(2, 2); \
             READ_TYPEOF(A); READ_TYPEOF(B); \
             SCOPES_CHECK_RESULT(verify_real_ops(A, B)); \
-            auto op = BinOp::from(BinOp ## NAME, _A, _B); \
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A, _B)); \
-            return TypedValueRef(call.anchor(), op); \
+            return TypedValueRef(call.anchor(), BinOp::from(BinOp ## NAME, _A, _B)); \
         } break;
 #define FTRI_OP(NAME) \
         case OP_ ## NAME: { \
             CHECKARGS(3, 3); \
             READ_TYPEOF(A); READ_TYPEOF(B); READ_TYPEOF(C); \
             SCOPES_CHECK_RESULT(verify_real_ops(A, B, C)); \
-            auto op = TriOp::from(TriOp ## NAME, _A, _B, _C); \
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A, _B, _C)); \
-            return TypedValueRef(call.anchor(), op); \
+            return TypedValueRef(call.anchor(), TriOp::from(TriOp ## NAME, _A, _B, _C)); \
         } break;
 #define IUN_OP(NAME, PFX) \
         case OP_ ## NAME: { \
             CHECKARGS(1, 1); \
             READ_TYPEOF(A); \
             SCOPES_CHECK_RESULT(verify_integer_ops(A)); \
-            auto op = UnOp::from(UnOp ## NAME, _A); \
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A)); \
-            return TypedValueRef(call.anchor(), op); \
+            return TypedValueRef(call.anchor(), UnOp::from(UnOp ## NAME, _A)); \
         } break;
 #define FUN_OP(NAME) \
         case OP_ ## NAME: { \
             CHECKARGS(1, 1); \
             READ_TYPEOF(A); \
             SCOPES_CHECK_RESULT(verify_real_ops(A)); \
-            auto op = UnOp::from(UnOp ## NAME, _A); \
-            op->hack_change_value(VIEWTYPE1(op->get_type(), _A)); \
-            return TypedValueRef(call.anchor(), op); \
+            return TypedValueRef(call.anchor(), UnOp::from(UnOp ## NAME, _A)); \
         } break;
         SCOPES_ARITH_OPS()
 
@@ -3100,26 +2149,6 @@ repeat:
             SCOPES_CHECK_RESULT(build_deref(ctx, call.anchor(), values[i]));
             Ta = values[i]->get_type();
         }
-        if (is_view(Tb)) {
-            if (!is_view(Ta)) {
-                SCOPES_CHECK_RESULT(build_view(ctx, call.anchor(), values[i]));
-                Ta = values[i]->get_type();
-                if (!is_view(Ta)) {
-                    SCOPES_ERROR(ParameterTypeMismatch, Tb, Ta);
-                }
-            }
-            Tb = strip_view(Tb);
-            Ta = strip_view(Ta);
-        } else if (is_unique(Tb)) {
-            if (!is_view(Ta)) {
-                assert(is_unique(Ta));
-                Tb = strip_unique(Tb);
-                Ta = strip_unique(Ta);
-            }
-        } else if (is_plain(Tb)) {
-            //Tb = strip_lifetime(Tb);
-            Ta = strip_lifetime(Ta);
-        }
         Ta = strip_qualifier<KeyQualifier>(Ta);
         if (SCOPES_GET_RESULT(types_compatible(Tb, Ta))) {
             continue;
@@ -3131,56 +2160,17 @@ repeat:
         DEREF(values[i]);
     }
 
-    // build id map
-    ID2SetMap idmap;
-    idmap.reserve(numargs);
-    // first map uniques
-    for (int i = 0; i < numargs; ++i) {
-        const Type *paramT = ft->argument_types[i];
-        if (is_unique(paramT)) {
-            const Type *argT = values[i]->get_type();
-            auto paramu = get_unique(paramT);
-            auto argu = get_unique(argT);
-            // argument will be moved into the function
-            ctx.move(argu->id, call);
-            map_unique_id(idmap, paramu->id, argu->id);
-        }
-    }
-    // then map views
-    for (int i = 0; i < numargs; ++i) {
-        const Type *paramT = ft->argument_types[i];
-        if (is_view(paramT)) {
-            const Type *argT = values[i]->get_type();
-            if (!is_view(argT)) {
-                StyledStream ss;
-                ss << paramT << " != " << argT << std::endl;
-            }
-            auto paramv = get_view(paramT);
-            auto argv = get_view(argT);
-            for (auto id : paramv->sorted_ids) {
-                auto it = idmap.find(id);
-                if (it != idmap.end())
-                    continue;
-                assert(!argv->ids.empty());
-                // unseen view id, map to argument ids
-                for (auto vid : argv->ids) {
-                    map_unique_id(idmap, id, vid);
-                }
-            }
-        }
-    }
     //const Type *art = aft->return_type;
-    const Type *rt = remap_unique_return_arguments(ctx, idmap, ft->return_type);
+    const Type *rt = ft->return_type;
     CallRef newcall = ref(call.anchor(), Call::from(rt, callee, values));
     //newcall->set_def_anchor(call->def_anchor());
     if (ft->has_exception()) {
         // todo: remap exception type
         newcall->except_body.set_parent(ctx.block);
         auto exceptctx = ctx.with_block(newcall->except_body);
-        const Type *et = remap_unique_return_arguments(exceptctx, idmap, ft->except_type);
+        const Type *et = ft->except_type;
         auto exc = ref(call.anchor(), Exception::from(et));
 
-        map_arguments_to_block(exceptctx, exc);
         newcall->except = exc;
 
         SCOPES_CHECK_RESULT(make_raise(exceptctx, call, exc));
@@ -3240,8 +2230,6 @@ static SCOPES_RESULT(TypedValueRef) finalize_merge_label(const ASTContext &ctx,
         }
     }
 
-    IDSet valid;
-    SCOPES_CHECK_RESULT(finalize_merges(ctx, merge_label, valid, by));
     if (!rtype) {
         const Anchor *last_anchor = merge_label.anchor();
         for (auto merge : merge_label->merges) {
@@ -3250,10 +2238,8 @@ static SCOPES_RESULT(TypedValueRef) finalize_merge_label(const ASTContext &ctx,
                 last_anchor, merge.anchor()));
             last_anchor = merge.anchor();
         }
-        rtype = ctx.fix_merge_type(rtype);
     }
     merge_label->change_type(rtype);
-    merge_back_valid(ctx, valid, merge_label);
     SCOPES_CHECK_RESULT(ctx.append(merge_label));
 
     return TypedValueRef(merge_label);
@@ -3301,7 +2287,6 @@ static SCOPES_RESULT(TypedValueRef) prove_SwitchTemplate(const ASTContext &ctx,
         ASTContext newctx;
         auto newvalue = SCOPES_GET_RESULT(prove_block(subctx, newcase->body, _case.value, newctx));
         if (_case.kind == CK_Pass) {
-            SCOPES_CHECK_RESULT(validate_pass_block(subctx, newcase->body));
         } else {
             if (is_returning(newvalue->get_type())) {
                 SCOPES_CHECK_RESULT(make_merge(newctx, newvalue.anchor(), merge_label, newvalue));
@@ -3344,7 +2329,7 @@ static SCOPES_RESULT(TypedValueRef) prove_If(const ASTContext &ctx, const IfRef 
                 newcond = ref(newcond.anchor(),
                     ExtractArgument::from(newcond, 0));
                 SCOPES_CHECK_RESULT(build_tobool(subctx, newcond.anchor(), newcond));
-                SCOPES_CHECK_RESULT(build_deref_automove(subctx, newcond, newcond));
+                SCOPES_CHECK_RESULT(build_deref(subctx, newcond.anchor(), newcond));
                 auto condT = strip_qualifiers(newcond->get_type());
                 if (condT != TYPE_Bool) {
                     SCOPES_ERROR(ConditionNotBool, newcond->get_type());
@@ -3532,8 +2517,6 @@ static SCOPES_RESULT(TypedValueRef) prove_inline_body(const ASTContext &ctx,
             if (is_returning(result_value->get_type())) {
                 SCOPES_CHECK_RESULT(make_merge(bodyctx, result_value.anchor(), label, result_value));
             }
-            IDSet valid;
-            SCOPES_CHECK_RESULT(finalize_merges(ctx, label, valid, "inline return"));
             const Type *rtype = nullptr;
             const Anchor *last_anchor = result_value.anchor();
             for (auto merge : label->merges) {
@@ -3543,9 +2526,7 @@ static SCOPES_RESULT(TypedValueRef) prove_inline_body(const ASTContext &ctx,
                     last_anchor, merge.anchor()));
                 last_anchor = merge.anchor();
             }
-            rtype = ctx.fix_merge_type(rtype);
             label->change_type(rtype);
-            merge_back_valid(ctx, valid, label);
             SCOPES_CHECK_RESULT(ctx.append(label));
             return TypedValueRef(label);
         }
@@ -3573,7 +2554,6 @@ static SCOPES_RESULT(FunctionRef) prove_body(
     SCOPES_RESULT_TYPE(FunctionRef);
     Timer sum_prove_time(TIMER_Specialize);
     assert(func);
-    canonicalize_argument_types(types);
     Function key(func->name, {});
     key.original = func;
     key.frame = frame;
@@ -3632,16 +2612,13 @@ static SCOPES_RESULT(FunctionRef) prove_body(
             fn->bind(oldparam, newparam);
         }
     }
-    fn->build_valids();
     functions.insert(fn.unref());
 
     ASTContext fnctx = ASTContext::from_function(fn);
     ASTContext bodyctx = fnctx.with_block(fn->body);
-    fn->body.valid = fn->valid;
     auto expr = SCOPES_GET_RESULT(prove(bodyctx, func->value));
     SCOPES_CHECK_RESULT(make_return(bodyctx, expr, expr));
     SCOPES_CHECK_RESULT(ensure_function_type(fn));
-    SCOPES_CHECK_RESULT(finalize_returns_raises(bodyctx));
     //SCOPES_CHECK_RESULT(track(fnctx));
     fn->complete = true;
     return fn;

@@ -46,8 +46,6 @@ struct FunctionType : Type {
     mutable const FunctionType *stripped;
 };
 
-void canonicalize_argument_types(Types &types);
-
 const Type *raising_function_type(const Type *except_type, const Type *return_type,
     Types argument_types, uint32_t flags = 0);
 const Type *raising_function_type(const Type *return_type,

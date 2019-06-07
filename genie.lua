@@ -155,7 +155,6 @@ project "scopesrt"
         "src/type/typename_type.cpp",
         "src/type/image_type.cpp",
         "src/type/sampledimage_type.cpp",
-        "src/qualifier/unique_qualifiers.cpp",
         "src/qualifier/key_qualifier.cpp",
         "src/qualifier/refer_qualifier.cpp",
         "src/scope.cpp",

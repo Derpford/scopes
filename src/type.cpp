@@ -361,7 +361,7 @@ SCOPES_RESULT(bool) types_compatible(const Type *paramT, const Type *argT) {
 
 SCOPES_RESULT(void) verify(const Type *typea, const Type *typeb) {
     SCOPES_RESULT_TYPE(void);
-    if (strip_lifetime(typea) != strip_lifetime(typeb)) {
+    if (typea != typeb) {
         SCOPES_ERROR(ParameterTypeMismatch, typea, typeb);
     }
     return {};

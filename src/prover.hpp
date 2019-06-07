@@ -40,12 +40,7 @@ struct ASTContext {
     static ASTContext from_function(const FunctionRef &fn);
 
     SCOPES_RESULT(void) append(const InstructionRef &value) const;
-    SCOPES_RESULT(void) unchecked_append(const InstructionRef &value) const;
     void merge_block(Block &_block) const;
-
-    const Type *fix_merge_type(const Type *T) const;
-    int unique_id() const;
-    void move(int id, const ValueRef &mover) const;
 
     SCOPES_RESULT(InstructionRef) build_getelementref(const Anchor *anchor,
         const TypedValueRef &value, const TypedValues &indices) const;

@@ -420,69 +420,16 @@ TemplateRef Template::from(Symbol name,
 
 //------------------------------------------------------------------------------
 
-Function::UniqueInfo::UniqueInfo(const ValueIndex& _value)
-    : value(_value) {
-}
-
-int Function::UniqueInfo::get_depth() const {
-    return value.value->get_depth();
-}
-
 Function::Function(Symbol _name, const Parameters &_params)
     : Pure(VK_Function, TYPE_Unknown),
         name(_name), params(_params),
-        docstring(nullptr),
-        frame(FunctionRef()),
-        boundary(FunctionRef()),
-        original(TemplateRef()),
-        label(LabelRef()),
-        complete(false),
-        nextid(FirstUniquePrivate),
         returning_hint(TYPE_NoReturn),
-        raising_hint(TYPE_NoReturn),
-        returning_anchor(nullptr),
-        raising_anchor(nullptr) {
+        raising_hint(TYPE_NoReturn) {
     body.depth = 1;
     int index = 0;
     for (auto param : params) {
         param->set_owner(ref(unknown_anchor(), this), index++);
     }
-}
-
-const Function::UniqueInfo &Function::get_unique_info(int id) const {
-    assert(id != 0);
-    assert(id != GlobalUnique);
-    assert(id < nextid);
-    auto it = uniques.find(id);
-    assert(it != uniques.end());
-    return it->second;
-}
-
-int Function::unique_id() {
-    return nextid++;
-}
-
-void Function::try_bind_unique(const TypedValueRef &value) {
-    auto T = value->get_type();
-    int count = get_argument_count(T);
-    for (int i = 0; i < count; ++i) {
-        auto argT = get_argument(T, i);
-        if (is_unique(argT)) {
-            bind_unique(UniqueInfo(ValueIndex(value, i)));
-        }
-    }
-}
-
-void Function::bind_unique(const UniqueInfo &info) {
-    auto uq = get_unique(info.value.get_type());
-    auto result = uniques.insert({uq->id, info});
-    if (!result.second) {
-        StyledStream ss;
-        ss << "internal error: duplicate unique " << uq->id;
-        ss << " (was " << result.first->second.value;
-        ss << ", is " << info.value << ")" << std::endl;
-    }
-    assert(result.second);
 }
 
 bool Function::key_equal(const Function *other) const {
@@ -508,61 +455,6 @@ void Function::change_type(const Type *type) {
     assert(is_typed());
     assert(type);
     _type = type;
-}
-
-const Anchor *Function::get_best_mover_anchor(int id) {
-    auto it = movers.find(id);
-    if (it != movers.end()) {
-        return it->second.anchor();
-    } else {
-        auto info = get_unique_info(id);
-        return info.value.value.anchor();
-    }
-}
-
-void Function::hint_mover(int id, const ValueRef &where) {
-    auto result = movers.insert({ id, where });
-    if (!result.second)
-        result.second = where;
-}
-
-void Function::build_valids() {
-    assert(valid.empty());
-    // add uniques
-    for (auto sym : params) {
-        auto T = sym->get_type();
-        int count = get_argument_count(T);
-        for (int i = 0; i < count; ++i) {
-            auto argT = get_argument(T, i);
-            auto uq = try_unique(argT);
-            if (uq) {
-                assert(uq->id);
-                bind_unique(UniqueInfo(ValueIndex(sym, i)));
-                valid.insert(uq->id);
-            }
-        }
-    }
-    // add views
-    for (auto sym : params) {
-        auto T = sym->get_type();
-        int count = get_argument_count(T);
-        for (int i = 0; i < count; ++i) {
-            auto argT = get_argument(T, i);
-            auto vq = try_view(argT);
-            if (vq) {
-                for (auto id : vq->ids) {
-                    assert(id);
-                    if (!valid.count(id)) {
-                        auto result = uniques.insert({id,
-                            UniqueInfo(ValueIndex(sym, i))});
-                        assert(result.second);
-                        valid.insert(id);
-                    }
-                }
-            }
-        }
-    }
-    original_valid = valid;
 }
 
 void Function::append_param(const ParameterRef &sym) {
@@ -726,51 +618,6 @@ Block::Block()
     : depth(-1), insert_index(0), tag_traceback(true), terminator(InstructionRef())
 {}
 
-bool Block::is_valid(const IDSet &ids) const {
-    int _id = 0;
-    return is_valid(ids, _id);
-}
-
-bool Block::is_valid(const ValueIndex &value) const {
-    int _id = 0;
-    return is_valid(value, _id);
-}
-
-bool Block::is_valid(const ValueIndex &value, int &_id) const {
-    auto T = value.get_type();
-    auto vq = try_view(T);
-    if (vq) {
-        return is_valid(vq->ids, _id);
-    }
-    auto uq = try_unique(T);
-    if (uq) {
-        if (!is_valid(uq->id)) {
-            _id = uq->id;
-            return false;
-        }
-    }
-    return true;
-}
-
-bool Block::is_valid(const IDSet &ids, int &_id) const {
-    for (auto id : ids) {
-        if (!is_valid(id)) {
-            _id = id;
-            return false;
-        }
-    }
-    return true;
-}
-
-bool Block::is_valid(int id) const {
-    return (id == GlobalUnique)?true:valid.count(id);
-}
-
-void Block::move(int id) {
-    assert(is_valid(id));
-    valid.erase(id);
-}
-
 bool Block::is_terminated() const {
     return terminator.unref() != nullptr;
 }
@@ -780,18 +627,10 @@ void Block::set_parent(Block *_parent) {
     assert(_parent);
     depth = _parent->depth + 1;
     tag_traceback = _parent->tag_traceback;
-    // copy valids from parent
-    if (valid.empty()) {
-        valid = _parent->valid;
-    } else {
-        // block has some preconfigured values
-        valid = union_idset(valid, _parent->valid);
-    }
 }
 
 void Block::clear() {
     body.clear();
-    valid.clear();
     terminator = InstructionRef();
 }
 
@@ -804,10 +643,6 @@ void Block::migrate_from(Block &source) {
         terminator = source.terminator;
         terminator->block = this;
     }
-    // equivalent to removing all values no longer valid, and adding
-    // all values that have since been added
-    valid = source.valid;
-    source.clear();
 }
 
 bool Block::empty() const {
@@ -831,15 +666,6 @@ void Block::append(const InstructionRef &node) {
         assert(insert_index == body.size());
         terminator = node;
     } else {
-        auto T = node->get_type();
-        auto count = get_argument_count(T);
-        for (int i = 0; i < count; ++i) {
-            auto uq = try_unique(get_argument(T, i));
-            if (uq) {
-                assert(uq->id);
-                valid.insert(uq->id);
-            }
-        }
         body.insert(body.begin() + insert_index, node);
         insert_index++;
     }
@@ -1937,11 +1763,6 @@ SCOPES_TYPED_VALUE_KIND()
 TypedValue::TypedValue(ValueKind _kind, const Type *type)
     : Value(_kind), _type(type) {
     assert(_type);
-}
-
-void TypedValue::hack_change_value(const Type *T) {
-    assert(T);
-    _type = T;
 }
 
 const Type *TypedValue::get_type() const {
