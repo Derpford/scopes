@@ -77,6 +77,7 @@ test-modules
     .test_struct
     .test_sugar
     .test_switch
+    .test_table
     .test_testing
     .test_try
     .test_tuple_array

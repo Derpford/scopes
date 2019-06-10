@@ -26,7 +26,6 @@
 #include "scopes/scopes.h"
 #include "qualifier.inc"
 #include "symbol_enum.inc"
-#include "lifetime.hpp"
 
 #include <algorithm>
 #include <unordered_set>
@@ -264,7 +263,6 @@ SCOPES_RESULT(void) ASTContext::append(const InstructionRef &value) const {
     SCOPES_RESULT_TYPE(void);
     assert(block);
     block->append(value);
-    SCOPES_CHECK_RESULT(tag_instruction(*this, value));
     return {};
 }
 
@@ -2633,6 +2631,11 @@ SCOPES_RESULT(FunctionRef) prove(const FunctionRef &frame, const TemplateRef &fu
     auto result = prove_body(frame, func, types);
     func->recursion--;
     return result;
+}
+
+const ASTContext &active_ast_context() {
+    assert(ast_context);
+    return *ast_context;
 }
 
 SCOPES_RESULT(TypedValueRef) prove(const ValueRef &node) {

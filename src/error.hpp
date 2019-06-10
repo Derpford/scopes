@@ -428,6 +428,9 @@ formatters:
     T(RTMissingLocalTypeAttribute, \
         "runtime: no attribute %0 in local type", \
         Symbol) \
+    T(RTMissingTableAttribute, \
+        "runtime: no attribute %0 in table", \
+        Symbol) \
     T(RTRegExError, \
         "runtime: error in regular expression: %0", \
         PString) \

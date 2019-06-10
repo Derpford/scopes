@@ -264,6 +264,12 @@ SCOPES_LIBEXPORT sc_valueref_t sc_label_new(int kind, sc_symbol_t name);
 SCOPES_LIBEXPORT void sc_label_set_body(sc_valueref_t label, sc_valueref_t body);
 SCOPES_LIBEXPORT sc_valueref_t sc_merge_new(sc_valueref_t label, sc_valueref_t value);
 
+// tables
+
+SCOPES_LIBEXPORT void sc_table_set_symbol(sc_valueref_t target, sc_symbol_t name, sc_valueref_t value);
+SCOPES_LIBEXPORT sc_valueref_raises_t sc_table_at(sc_valueref_t target, sc_symbol_t name);
+SCOPES_LIBEXPORT sc_symbol_valueref_tuple_t sc_table_next(sc_valueref_t target, sc_symbol_t key);
+
 // parsing
 
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_parse_from_path(const sc_string_t *path);

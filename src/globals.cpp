@@ -1559,6 +1559,53 @@ sc_valueref_t sc_merge_new(sc_valueref_t label, sc_valueref_t value) {
     return MergeTemplate::from(label.cast<LabelTemplate>(), value);
 }
 
+// Table
+////////////////////////////////////////////////////////////////////////////////
+
+void sc_table_set_symbol(sc_valueref_t target, sc_symbol_t name, sc_valueref_t value) {
+    using namespace scopes;
+    auto &&ctx = active_ast_context();
+    assert(ctx.block);
+    auto &&table = ctx.block->get_table(ValueIndex(target.cast<TypedValue>()));
+    table.replace(name, value.cast<Const>());
+}
+
+sc_valueref_raises_t sc_table_at(sc_valueref_t target, sc_symbol_t name) {
+    using namespace scopes;
+    SCOPES_RESULT_TYPE(ValueRef);
+    auto &&ctx = active_ast_context();
+    assert(ctx.block);
+    auto &&table = ctx.block->get_table(ValueIndex(target.cast<TypedValue>()));
+    auto index = table.find_index(name);
+    if (index < 0) {
+        SCOPES_C_ERROR(RTMissingTableAttribute, name);
+    }
+    SCOPES_C_RETURN(table.values[index]);
+}
+
+sc_symbol_valueref_tuple_t sc_table_next(sc_valueref_t target, sc_symbol_t key) {
+    using namespace scopes;
+    using namespace scopes;
+    auto &&ctx = active_ast_context();
+    assert(ctx.block);
+    auto &&map = ctx.block->get_table(ValueIndex(target.cast<TypedValue>()));
+    int index;
+    int count = map.keys.size();
+    if (key == SYM_Unnamed) {
+        index = 0;
+    } else {
+        index = map.find_index(key);
+        if (index < 0)
+            index = count;
+        else
+            index++;
+    }
+    if (index != count) {
+        return { map.keys[index], map.values[index] };
+    }
+    return { SYM_Unnamed, ValueRef() };
+}
+
 // Parser
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -2254,6 +2301,10 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_label_new, TYPE_ValueRef, TYPE_I32, TYPE_Symbol);
     DEFINE_EXTERN_C_FUNCTION(sc_label_set_body, _void, TYPE_ValueRef, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_merge_new, TYPE_ValueRef, TYPE_ValueRef, TYPE_ValueRef);
+
+    DEFINE_EXTERN_C_FUNCTION(sc_table_set_symbol, _void, TYPE_ValueRef, TYPE_Symbol, TYPE_ValueRef);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_table_at, TYPE_ValueRef, TYPE_ValueRef, TYPE_Symbol);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_table_next, arguments_type({TYPE_Symbol, TYPE_ValueRef}), TYPE_ValueRef, TYPE_Symbol);
 
     DEFINE_EXTERN_C_FUNCTION(sc_is_file, TYPE_Bool, TYPE_String);
     DEFINE_EXTERN_C_FUNCTION(sc_is_directory, TYPE_Bool, TYPE_String);

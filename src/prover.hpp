@@ -79,6 +79,8 @@ SCOPES_RESULT(FunctionRef) prove(const FunctionRef &frame, const TemplateRef &fu
 SCOPES_RESULT(TypedValueRef) prove(const ASTContext &ctx, const ValueRef &node);
 SCOPES_RESULT(TypedValueRef) prove(const ValueRef &node);
 
+const ASTContext &active_ast_context();
+
 SCOPES_RESULT(const Type *) ptr_to_ref(const Type *T);
 SCOPES_RESULT(const Type *) ref_to_ptr(const Type *T);
 

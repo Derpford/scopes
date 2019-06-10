@@ -627,11 +627,24 @@ void Block::set_parent(Block *_parent) {
     assert(_parent);
     depth = _parent->depth + 1;
     tag_traceback = _parent->tag_traceback;
+    merge_table_from(*_parent);
+}
+
+void Block::merge_table_from(Block &source) {
+    for (auto &&table_entry : source.tables) {
+        auto &&src = table_entry.second;
+        auto &&dst = get_table(table_entry.first);
+        int sz = src.keys.size();
+        for (int i = 0; i < sz; ++i) {
+            dst.replace(src.keys[i], src.values[i]);
+        }
+    }
 }
 
 void Block::clear() {
     body.clear();
     terminator = InstructionRef();
+    tables.clear();
 }
 
 void Block::migrate_from(Block &source) {
@@ -643,6 +656,7 @@ void Block::migrate_from(Block &source) {
         terminator = source.terminator;
         terminator->block = this;
     }
+    merge_table_from(source);
 }
 
 bool Block::empty() const {
@@ -671,12 +685,8 @@ void Block::append(const InstructionRef &node) {
     }
 }
 
-Block::DataMap &Block::get_channel(Symbol name) {
-    DataMap *&map = channels[name];
-    if (!map) {
-        map = new DataMap();
-    }
-    return *map;
+Table &Block::get_table(const ValueIndex &value) {
+    return tables[value];
 }
 
 //------------------------------------------------------------------------------

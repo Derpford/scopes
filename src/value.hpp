@@ -111,13 +111,16 @@ protected:
 
 //------------------------------------------------------------------------------
 
+typedef OrderedMap<ConstRef> Table;
+
 struct Block {
-    typedef std::unordered_map<TypedValue *, ConstRef> DataMap;
+    typedef std::unordered_map<ValueIndex, Table, ValueIndex::Hash> Tables;
 
     Block();
     void append(const InstructionRef &node);
     bool empty() const;
     void migrate_from(Block &source);
+    void merge_table_from(Block &source);
     void clear();
     void set_parent(Block *parent);
 
@@ -126,9 +129,9 @@ struct Block {
     void insert_at(int index);
     void insert_at_end();
 
-    DataMap &get_channel(Symbol name);
+    Table &get_table(const ValueIndex &value);
 
-    std::unordered_map<Symbol, DataMap *, Symbol::Hash> channels;
+    Tables tables;
 
     int depth;
     int insert_index;
