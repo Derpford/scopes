@@ -28,12 +28,14 @@ extern "C" {
 #define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
 #define PRIMITIVE_CAT(a, ...) a ## __VA_ARGS__
 
+/*
 SCOPES_LIBEXPORT extern const char *scopes_compiler_path;
 SCOPES_LIBEXPORT extern const char *scopes_compiler_dir;
 SCOPES_LIBEXPORT extern const char *scopes_clang_include_dir;
 SCOPES_LIBEXPORT extern const char *scopes_include_dir;
 SCOPES_LIBEXPORT extern size_t scopes_argc;
 SCOPES_LIBEXPORT extern char **scopes_argv;
+*/
 
 SCOPES_LIBEXPORT void scopes_strtod(double *v, const char *str, char **str_end, int base );
 SCOPES_LIBEXPORT void scopes_strtoll(int64_t *v, const char* str, char** endptr);
@@ -58,6 +60,7 @@ namespace scopes {
     struct Frame;
     struct Value;
     struct Closure;
+    struct GlobalString;
 }
 
 extern "C" {
@@ -65,7 +68,6 @@ extern "C" {
 typedef scopes::Type sc_type_t;
 typedef scopes::Scope sc_scope_t;
 typedef scopes::Symbol sc_symbol_t;
-typedef scopes::String sc_string_t;
 typedef scopes::List sc_list_t;
 typedef scopes::Error sc_error_t;
 typedef scopes::Anchor sc_anchor_t;
@@ -75,6 +77,7 @@ typedef scopes::Value sc_value_t;
 typedef scopes::Closure sc_closure_t;
 
 typedef scopes::ValueRef sc_valueref_t;
+typedef scopes::GlobalStringRef sc_globalstringref_t;
 
 // some of the return types are technically illegal in C, but we take care
 // that the alignment is correct
@@ -84,7 +87,6 @@ typedef scopes::ValueRef sc_valueref_t;
 
 typedef struct sc_type_ sc_type_t;
 typedef struct sc_scope_ sc_scope_t;
-typedef struct sc_string_ sc_string_t;
 typedef struct sc_list_ sc_list_t;
 typedef struct sc_error_ sc_error_t;
 typedef struct sc_anchor_ sc_anchor_t;
@@ -92,15 +94,17 @@ typedef struct sc_parameter_ sc_parameter_t;
 typedef struct sc_frame_ sc_frame_t;
 typedef struct sc_value_ sc_value_t;
 typedef struct sc_closure_ sc_closure_t;
+typedef struct sc_globalstring_ sc_globalstring_t;
 
 typedef uint64_t sc_symbol_t;
 
 typedef struct sc_valueref_ { sc_value_t *_0; const sc_anchor_t *_1; } sc_valueref_t;
+typedef struct sc_globalstringref_ { sc_globalstring_t *_0; const sc_anchor_t *_1; } sc_globalstringref_t;
 
 #endif
 
-typedef struct sc_bool_string_tuple_ { bool _0; const sc_string_t *_1; } sc_bool_string_tuple_t;
 typedef struct sc_bool_valueref_tuple_ { bool _0; sc_valueref_t _1; } sc_bool_valueref_tuple_t;
+typedef struct sc_bool_globalstringref_tuple_ { bool _0; sc_valueref_t _1; } sc_bool_globalstringref_tuple_t;
 typedef struct sc_bool_i32_i32_tuple_ { bool _0; int32_t _1, _2; } sc_bool_i32_i32_tuple_t;
 
 typedef struct sc_valueref_list_tuple_ { sc_valueref_t _0; const sc_list_t *_1; } sc_valueref_list_tuple_t;
@@ -129,7 +133,7 @@ typedef struct sc_void_raises_ { bool ok; sc_error_t *except; } sc_void_raises_t
     typedef struct NAME ## _ { bool ok; sc_error_t *except; RESULT_TYPE _0; } NAME ## _t
 
 SCOPES_TYPEDEF_RESULT_RAISES(sc_valueref_raises, sc_valueref_t);
-SCOPES_TYPEDEF_RESULT_RAISES(sc_string_raises, const sc_string_t *);
+SCOPES_TYPEDEF_RESULT_RAISES(sc_globalstringref_raises, sc_globalstringref_t);
 SCOPES_TYPEDEF_RESULT_RAISES(sc_size_raises, size_t);
 SCOPES_TYPEDEF_RESULT_RAISES(sc_scope_raises, const sc_scope_t *);
 SCOPES_TYPEDEF_RESULT_RAISES(sc_int_raises, int32_t);
@@ -168,20 +172,20 @@ SCOPES_LIBEXPORT sc_valueref_raises_t sc_prove(sc_valueref_t expr);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_typify(const sc_closure_t *f, int numtypes, const sc_type_t **typeargs);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_typify_template(sc_valueref_t f, int numtypes, const sc_type_t **typeargs);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_compile(sc_valueref_t srcl, uint64_t flags);
-SCOPES_LIBEXPORT sc_string_raises_t sc_compile_spirv(sc_symbol_t target, sc_valueref_t srcl, uint64_t flags);
-SCOPES_LIBEXPORT sc_string_raises_t sc_compile_glsl(int version, sc_symbol_t target, sc_valueref_t srcl, uint64_t flags);
-SCOPES_LIBEXPORT const sc_string_t *sc_default_target_triple();
-SCOPES_LIBEXPORT sc_void_raises_t sc_compile_object(const sc_string_t *target_triple, int file_kind, const sc_string_t *path, const sc_scope_t *table, uint64_t flags);
+SCOPES_LIBEXPORT sc_globalstringref_raises_t sc_compile_spirv(sc_symbol_t target, sc_valueref_t srcl, uint64_t flags);
+SCOPES_LIBEXPORT sc_globalstringref_raises_t sc_compile_glsl(int version, sc_symbol_t target, sc_valueref_t srcl, uint64_t flags);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_default_target_triple();
+SCOPES_LIBEXPORT sc_void_raises_t sc_compile_object(sc_globalstringref_t target_triple, int file_kind, sc_globalstringref_t path, const sc_scope_t *table, uint64_t flags);
 SCOPES_LIBEXPORT void sc_enter_solver_cli ();
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_eval_inline(const sc_anchor_t *anchor, const sc_list_t *expr, const sc_scope_t *scope);
 SCOPES_LIBEXPORT sc_rawstring_i32_array_tuple_t sc_launch_args();
 
 // value
 
-SCOPES_LIBEXPORT const sc_string_t *sc_value_repr (sc_valueref_t value);
-SCOPES_LIBEXPORT const sc_string_t *sc_value_content_repr (sc_valueref_t value);
-SCOPES_LIBEXPORT const sc_string_t *sc_value_ast_repr (sc_valueref_t value);
-SCOPES_LIBEXPORT const sc_string_t *sc_value_tostring (sc_valueref_t value);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_value_repr (sc_valueref_t value);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_value_content_repr (sc_valueref_t value);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_value_ast_repr (sc_valueref_t value);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_value_tostring (sc_valueref_t value);
 SCOPES_LIBEXPORT const sc_type_t *sc_value_type (sc_valueref_t value);
 SCOPES_LIBEXPORT const sc_type_t *sc_value_qualified_type (sc_valueref_t value);
 SCOPES_LIBEXPORT const sc_anchor_t *sc_value_anchor (sc_valueref_t value);
@@ -194,7 +198,7 @@ SCOPES_LIBEXPORT int sc_value_block_depth (sc_valueref_t value);
 SCOPES_LIBEXPORT sc_valueref_t sc_identity(sc_valueref_t value);
 SCOPES_LIBEXPORT sc_valueref_t sc_value_wrap(const sc_type_t *type, sc_valueref_t value);
 SCOPES_LIBEXPORT sc_valueref_t sc_value_unwrap(const sc_type_t *type, sc_valueref_t value);
-SCOPES_LIBEXPORT const sc_string_t *sc_value_kind_string(int kind);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_value_kind_string(int kind);
 
 SCOPES_LIBEXPORT sc_valueref_t sc_keyed_new(sc_symbol_t key, sc_valueref_t value);
 
@@ -233,9 +237,6 @@ SCOPES_LIBEXPORT sc_int_raises_t sc_global_location(sc_valueref_t value);
 SCOPES_LIBEXPORT sc_int_raises_t sc_global_binding(sc_valueref_t value);
 SCOPES_LIBEXPORT sc_int_raises_t sc_global_descriptor_set(sc_valueref_t value);
 SCOPES_LIBEXPORT sc_symbol_raises_t sc_global_storage_class(sc_valueref_t value);
-
-SCOPES_LIBEXPORT sc_valueref_t sc_global_string_new(const char *ptr, size_t count);
-SCOPES_LIBEXPORT sc_valueref_t sc_global_string_new_from_cstr(const char *ptr);
 
 SCOPES_LIBEXPORT sc_valueref_t sc_if_new();
 SCOPES_LIBEXPORT void sc_if_append_then_clause(sc_valueref_t value, sc_valueref_t cond, sc_valueref_t body);
@@ -281,26 +282,26 @@ SCOPES_LIBEXPORT sc_valueref_t sc_merge_new(sc_valueref_t label, sc_valueref_t v
 
 // parsing
 
-SCOPES_LIBEXPORT sc_valueref_raises_t sc_parse_from_path(const sc_string_t *path);
-SCOPES_LIBEXPORT sc_valueref_raises_t sc_parse_from_string(const sc_string_t *str);
+SCOPES_LIBEXPORT sc_valueref_raises_t sc_parse_from_path(sc_globalstringref_t path);
+SCOPES_LIBEXPORT sc_valueref_raises_t sc_parse_from_string(sc_globalstringref_t str);
 
 // stdin/out
 
-SCOPES_LIBEXPORT const sc_string_t *sc_default_styler(sc_symbol_t style, const sc_string_t *str);
-SCOPES_LIBEXPORT sc_bool_string_tuple_t sc_prompt(const sc_string_t *s, const sc_string_t *pre);
-SCOPES_LIBEXPORT void sc_save_history(const sc_string_t *path);
-SCOPES_LIBEXPORT void sc_load_history(const sc_string_t *path);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_default_styler(sc_symbol_t style, sc_globalstringref_t str);
+SCOPES_LIBEXPORT sc_bool_globalstringref_tuple_t sc_prompt(sc_globalstringref_t s, sc_globalstringref_t pre);
+SCOPES_LIBEXPORT void sc_save_history(sc_globalstringref_t path);
+SCOPES_LIBEXPORT void sc_load_history(sc_globalstringref_t path);
 SCOPES_LIBEXPORT void sc_set_autocomplete_scope(const sc_scope_t* scope);
-SCOPES_LIBEXPORT const sc_string_t *sc_format_message(const sc_anchor_t *anchor, const sc_string_t *message);
-SCOPES_LIBEXPORT void sc_write(const sc_string_t *value);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_format_message(const sc_anchor_t *anchor, sc_globalstringref_t message);
+SCOPES_LIBEXPORT void sc_write(sc_globalstringref_t value);
 
 // file I/O
 
-SCOPES_LIBEXPORT const sc_string_t *sc_realpath(const sc_string_t *path);
-SCOPES_LIBEXPORT const sc_string_t *sc_dirname(const sc_string_t *path);
-SCOPES_LIBEXPORT const sc_string_t *sc_basename(const sc_string_t *path);
-SCOPES_LIBEXPORT bool sc_is_file(const sc_string_t *path);
-SCOPES_LIBEXPORT bool sc_is_directory(const sc_string_t *path);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_realpath(sc_globalstringref_t path);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_dirname(sc_globalstringref_t path);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_basename(sc_globalstringref_t path);
+SCOPES_LIBEXPORT bool sc_is_file(sc_globalstringref_t path);
+SCOPES_LIBEXPORT bool sc_is_directory(sc_globalstringref_t path);
 
 // globals
 
@@ -311,9 +312,9 @@ SCOPES_LIBEXPORT void sc_set_globals(const sc_scope_t *s);
 // error handling
 
 SCOPES_LIBEXPORT void sc_error_append_calltrace(sc_error_t *err, sc_valueref_t callexpr);
-SCOPES_LIBEXPORT const sc_string_t *sc_format_error(const sc_error_t *err);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_format_error(const sc_error_t *err);
 SCOPES_LIBEXPORT void sc_dump_error(const sc_error_t *err);
-SCOPES_LIBEXPORT sc_error_t *sc_error_new(const sc_string_t *msg);
+SCOPES_LIBEXPORT sc_error_t *sc_error_new(sc_globalstringref_t msg);
 SCOPES_LIBEXPORT void sc_set_signal_abort(bool value);
 SCOPES_LIBEXPORT void sc_abort();
 SCOPES_LIBEXPORT void sc_exit(int c);
@@ -331,26 +332,25 @@ SCOPES_LIBEXPORT uint64_t sc_hashbytes (const char *data, size_t size);
 
 // C bridge
 
-SCOPES_LIBEXPORT sc_scope_raises_t sc_import_c(const sc_string_t *path,
-    const sc_string_t *content, const sc_list_t *arglist, const sc_scope_t *scope);
-SCOPES_LIBEXPORT sc_void_raises_t sc_load_library(const sc_string_t *name);
-SCOPES_LIBEXPORT sc_void_raises_t sc_load_object(const sc_string_t *path);
+SCOPES_LIBEXPORT sc_scope_raises_t sc_import_c(sc_globalstringref_t path,
+    sc_globalstringref_t content, const sc_list_t *arglist, const sc_scope_t *scope);
+SCOPES_LIBEXPORT sc_void_raises_t sc_load_library(sc_globalstringref_t name);
+SCOPES_LIBEXPORT sc_void_raises_t sc_load_object(sc_globalstringref_t path);
 
 // lexical scopes
 
 SCOPES_LIBEXPORT const sc_scope_t *sc_scope_bind(const sc_scope_t *scope, sc_valueref_t key, sc_valueref_t value);
-SCOPES_LIBEXPORT const sc_scope_t *sc_scope_bind_with_docstring(const sc_scope_t *scope, sc_valueref_t key, sc_valueref_t value, const sc_string_t *doc);
+SCOPES_LIBEXPORT const sc_scope_t *sc_scope_bind_with_docstring(const sc_scope_t *scope, sc_valueref_t key, sc_valueref_t value, sc_globalstringref_t doc);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_scope_at(const sc_scope_t *scope, sc_valueref_t key);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_scope_local_at(const sc_scope_t *scope, sc_valueref_t key);
-SCOPES_LIBEXPORT const sc_string_t *sc_scope_module_docstring(const sc_scope_t *scope);
-SCOPES_LIBEXPORT const sc_string_t *sc_scope_docstring(const sc_scope_t *scope, sc_valueref_t key);
-SCOPES_LIBEXPORT void sc_scope_set_docstring(const sc_scope_t *scope, sc_valueref_t key, const sc_string_t *str);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_scope_module_docstring(const sc_scope_t *scope);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_scope_docstring(const sc_scope_t *scope, sc_valueref_t key);
 SCOPES_LIBEXPORT const sc_scope_t *sc_scope_new();
-SCOPES_LIBEXPORT const sc_scope_t *sc_scope_new_with_docstring(const sc_string_t *doc);
+SCOPES_LIBEXPORT const sc_scope_t *sc_scope_new_with_docstring(sc_globalstringref_t doc);
 SCOPES_LIBEXPORT const sc_scope_t *sc_scope_reparent(const sc_scope_t *scope, const sc_scope_t *parent);
 SCOPES_LIBEXPORT const sc_scope_t *sc_scope_unparent(const sc_scope_t *scope);
 SCOPES_LIBEXPORT const sc_scope_t *sc_scope_new_subscope(const sc_scope_t *scope);
-SCOPES_LIBEXPORT const sc_scope_t *sc_scope_new_subscope_with_docstring(const sc_scope_t *scope, const sc_string_t *doc);
+SCOPES_LIBEXPORT const sc_scope_t *sc_scope_new_subscope_with_docstring(const sc_scope_t *scope, sc_globalstringref_t doc);
 SCOPES_LIBEXPORT const sc_scope_t *sc_scope_get_parent(const sc_scope_t *scope);
 SCOPES_LIBEXPORT const sc_scope_t *sc_scope_unbind(const sc_scope_t *scope, sc_valueref_t sym);
 SCOPES_LIBEXPORT sc_valueref_valueref_i32_tuple_t sc_scope_next(const sc_scope_t *scope, int index);
@@ -358,32 +358,35 @@ SCOPES_LIBEXPORT sc_valueref_i32_tuple_t sc_scope_next_deleted(const sc_scope_t 
 
 // symbols
 
-SCOPES_LIBEXPORT sc_symbol_t sc_symbol_new(const sc_string_t *str);
-SCOPES_LIBEXPORT sc_symbol_t sc_symbol_new_unique(const sc_string_t *str);
-SCOPES_LIBEXPORT const sc_string_t *sc_symbol_to_string(sc_symbol_t sym);
+SCOPES_LIBEXPORT sc_symbol_t sc_symbol_new(sc_globalstringref_t str);
+SCOPES_LIBEXPORT sc_symbol_t sc_symbol_new_unique(sc_globalstringref_t str);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_symbol_to_string(sc_symbol_t sym);
 SCOPES_LIBEXPORT bool sc_symbol_is_variadic(sc_symbol_t sym);
 SCOPES_LIBEXPORT size_t sc_symbol_count();
 SCOPES_LIBEXPORT sc_symbol_t sc_symbol_style(sc_symbol_t name);
 
 // strings
 
-SCOPES_LIBEXPORT const sc_string_t *sc_string_new(const char *ptr, size_t count);
-SCOPES_LIBEXPORT const sc_string_t *sc_string_new_from_cstr(const char *ptr);
-SCOPES_LIBEXPORT const sc_string_t *sc_string_join(const sc_string_t *a, const sc_string_t *b);
-SCOPES_LIBEXPORT sc_bool_i32_i32_raises_t sc_string_match(const sc_string_t *pattern, const sc_string_t *text);
-SCOPES_LIBEXPORT size_t sc_string_count(const sc_string_t *str);
-SCOPES_LIBEXPORT sc_rawstring_size_t_tuple_t sc_string_buffer(const sc_string_t *str);
-SCOPES_LIBEXPORT const sc_string_t *sc_string_lslice(const sc_string_t *str, size_t offset);
-SCOPES_LIBEXPORT const sc_string_t *sc_string_rslice(const sc_string_t *str, size_t offset);
-SCOPES_LIBEXPORT int sc_string_compare(const sc_string_t *a, const sc_string_t *b);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_globalstring_new(const char *ptr, size_t count);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_globalstring_new_from_cstr(const char *ptr);
+SCOPES_LIBEXPORT size_t sc_globalstring_count(sc_globalstringref_t str);
+SCOPES_LIBEXPORT sc_rawstring_size_t_tuple_t sc_globalstring_buffer(sc_globalstringref_t str);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_globalstring_tag(sc_anchor_t *anchor, sc_globalstringref_t value);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_globalstring_join(sc_globalstringref_t a, sc_globalstringref_t b);
+SCOPES_LIBEXPORT sc_bool_i32_i32_raises_t sc_globalstring_match(sc_globalstringref_t pattern, sc_globalstringref_t text);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_globalstring_lslice(sc_globalstringref_t str, size_t offset);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_globalstring_rslice(sc_globalstringref_t str, size_t offset);
+SCOPES_LIBEXPORT int sc_globalstring_compare(sc_globalstringref_t a, sc_globalstringref_t b);
+SCOPES_LIBEXPORT sc_globalstringref_raises_t sc_value_globalstring(sc_valueref_t value);
+SCOPES_LIBEXPORT sc_valueref_t sc_globalstring_value(sc_globalstringref_t value);
 
 // lists
 
 SCOPES_LIBEXPORT const sc_list_t *sc_list_cons(sc_valueref_t at, const sc_list_t *next);
 SCOPES_LIBEXPORT const sc_list_t *sc_list_join(const sc_list_t *a, const sc_list_t *b);
 SCOPES_LIBEXPORT const sc_list_t *sc_list_dump(const sc_list_t *l);
-SCOPES_LIBEXPORT const sc_string_t *sc_list_repr(const sc_list_t *l);
-SCOPES_LIBEXPORT const sc_string_t *sc_list_serialize(const sc_list_t *l);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_list_repr(const sc_list_t *l);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_list_serialize(const sc_list_t *l);
 SCOPES_LIBEXPORT sc_valueref_list_tuple_t sc_list_decons(const sc_list_t *l);
 SCOPES_LIBEXPORT int sc_list_count(const sc_list_t *l);
 SCOPES_LIBEXPORT sc_valueref_t sc_list_at(const sc_list_t *l);
@@ -400,7 +403,7 @@ SCOPES_LIBEXPORT const sc_anchor_t *sc_anchor_offset(const sc_anchor_t *anchor, 
 
 // closures
 
-SCOPES_LIBEXPORT const sc_string_t *sc_closure_get_docstring(const sc_closure_t *func);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_closure_get_docstring(const sc_closure_t *func);
 SCOPES_LIBEXPORT sc_valueref_t sc_closure_get_template(const sc_closure_t *func);
 SCOPES_LIBEXPORT sc_valueref_t sc_closure_get_context(const sc_closure_t *func);
 
@@ -408,8 +411,8 @@ SCOPES_LIBEXPORT sc_valueref_t sc_closure_get_context(const sc_closure_t *func);
 
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_type_at(const sc_type_t *T, sc_symbol_t key);
 SCOPES_LIBEXPORT sc_valueref_raises_t sc_type_local_at(const sc_type_t *T, sc_symbol_t key);
-SCOPES_LIBEXPORT const sc_string_t *sc_type_get_docstring(const sc_type_t *T, sc_symbol_t key);
-SCOPES_LIBEXPORT void sc_type_set_docstring(const sc_type_t *T, sc_symbol_t key, const sc_string_t *str);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_type_get_docstring(const sc_type_t *T, sc_symbol_t key);
+SCOPES_LIBEXPORT void sc_type_set_docstring(const sc_type_t *T, sc_symbol_t key, sc_globalstringref_t str);
 SCOPES_LIBEXPORT sc_size_raises_t sc_type_sizeof(const sc_type_t *T);
 SCOPES_LIBEXPORT sc_size_raises_t sc_type_alignof(const sc_type_t *T);
 SCOPES_LIBEXPORT sc_size_raises_t sc_type_offsetof(const sc_type_t *T, int index);
@@ -425,7 +428,7 @@ SCOPES_LIBEXPORT bool sc_type_is_plain(const sc_type_t *T);
 SCOPES_LIBEXPORT bool sc_type_is_superof(const sc_type_t *super, const sc_type_t *T);
 SCOPES_LIBEXPORT bool sc_type_compatible(const sc_type_t *have, const sc_type_t *need);
 SCOPES_LIBEXPORT bool sc_type_is_default_suffix(const sc_type_t *T);
-SCOPES_LIBEXPORT const sc_string_t *sc_type_string(const sc_type_t *T);
+SCOPES_LIBEXPORT sc_globalstringref_t sc_type_string(const sc_type_t *T);
 SCOPES_LIBEXPORT sc_symbol_valueref_tuple_t sc_type_next(const sc_type_t *type, sc_symbol_t key);
 SCOPES_LIBEXPORT void sc_type_set_symbol(const sc_type_t *T, sc_symbol_t sym, sc_valueref_t value);
 
@@ -449,7 +452,7 @@ SCOPES_LIBEXPORT bool sc_integer_type_is_signed(const sc_type_t *T);
 
 // typename types
 
-SCOPES_LIBEXPORT sc_type_raises_t sc_typename_type(const sc_string_t *str, const sc_type_t *supertype);
+SCOPES_LIBEXPORT sc_type_raises_t sc_typename_type(sc_globalstringref_t str, const sc_type_t *supertype);
 SCOPES_LIBEXPORT const sc_type_t *sc_typename_type_get_super(const sc_type_t *T);
 SCOPES_LIBEXPORT sc_void_raises_t sc_typename_type_set_storage(const sc_type_t *T, const sc_type_t *T2, uint32_t flags);
 SCOPES_LIBEXPORT sc_void_raises_t sc_typename_type_set_opaque(const sc_type_t *T);

@@ -9,6 +9,7 @@
 #include "../dyn_cast.inc"
 #include "../hash.hpp"
 #include "../qualifier.inc"
+#include "../styled_stream.hpp"
 
 #include <algorithm>
 

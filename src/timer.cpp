@@ -5,6 +5,7 @@
 */
 
 #include "timer.hpp"
+#include "styled_stream.hpp"
 
 #include <unordered_map>
 
@@ -53,7 +54,7 @@ void Timer::print_timers() {
     double real_sum = 0.0;
     double non_user_sum = timers[TIMER_Main].time;
     for (auto &&it : timers) {
-        ss << it.first.name()->data << ": " << it.second.time << "ms" << std::endl;
+        ss << it.first.name() << ": " << it.second.time << "ms" << std::endl;
         real_sum += it.second.time;
     }
     ss << "cumulative real: " << real_sum << "ms" << std::endl;

@@ -213,12 +213,16 @@ StyledStream& StyledStream::operator<<(const char * const s) {
     }
     return *this;
 }
+#else
+StyledStream& StyledStream::operator<<(const char * const s) {
+    _ost << s;
+    return *this;
+}
+#endif
 
 StyledStream& StyledStream::operator<<(const std::string &s) {
     return *this << s.c_str();
 }
-
-#endif
 
 //------------------------------------------------------------------------------
 
@@ -331,10 +335,10 @@ void stream_uid(StyledStream &ss, uint64_t uid) {
 #endif
 
 #if 1
-static std::unordered_map<const void *, const String *> address_names;
+static std::unordered_map<const void *, std::string> address_names;
 
-void set_address_name(const void *ptr, const String *name) {
-    if (!name) {
+void set_address_name(const void *ptr, const std::string &name) {
+    if (name.empty()) {
         auto it = address_names.find(ptr);
         if (it != address_names.end()) {
             address_names.erase(it);
@@ -351,7 +355,7 @@ void set_address_name(const void *ptr, const String *name) {
 void stream_address(StyledStream &ss, const void *ptr) {
     auto it = address_names.find(ptr);
     if (it != address_names.end()) {
-        ss << it->second->data;
+        ss << it->second;
     } else {
         uint64_t addr = (uint64_t)ptr;
         stream_uid(ss, addr);

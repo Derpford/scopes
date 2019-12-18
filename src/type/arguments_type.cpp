@@ -10,6 +10,7 @@
 #include "../hash.hpp"
 #include "../dyn_cast.inc"
 #include "../result.hpp"
+#include "../styled_stream.hpp"
 
 #include <assert.h>
 

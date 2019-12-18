@@ -16,9 +16,13 @@
 #include "hash.hpp"
 #include "anchor.hpp"
 #include "prover.hpp"
+#include "string.hpp"
 
 #include <assert.h>
+#include <string.h>
 #include <unordered_set>
+
+#pragma GCC diagnostic ignored "-Wvla-extension"
 
 namespace scopes {
 
@@ -384,7 +388,7 @@ TypedValueRef ExtractArgument::from(const TypedValueRef &value, int index) {
 Template::Template(Symbol _name, const ParameterTemplates &_params, const ValueRef &_value)
     : UntypedValue(VK_Template),
         name(_name), params(_params), value(_value),
-        _is_inline(false), docstring(nullptr),
+        _is_inline(false),
         recursion(0) {
     int index = 0;
     for (auto param : params) {
@@ -431,7 +435,6 @@ int Function::UniqueInfo::get_depth() const {
 Function::Function(Symbol _name, const Parameters &_params)
     : Pure(VK_Function, TYPE_Unknown),
         name(_name), params(_params),
-        docstring(nullptr),
         frame(FunctionRef()),
         boundary(FunctionRef()),
         original(TemplateRef()),
@@ -654,62 +657,6 @@ GlobalRef Global::from(const Type *type, Symbol name, size_t flags, Symbol stora
 
 //------------------------------------------------------------------------------
 
-template<typename T>
-struct ConstSet {
-    struct Hash {
-        std::size_t operator()(const T *k) const {
-            return k->hash();
-        }
-    };
-
-    struct Equal {
-        std::size_t operator()(const T *self, const T *other) const {
-            return self->key_equal(other);
-        }
-    };
-
-    std::unordered_set<T *, Hash, Equal> map;
-
-    template<typename ... Args>
-    TValueRef<T> from(Args ... args) {
-        T key(args ...);
-        auto it = map.find(&key);
-        if (it != map.end()) {
-            return ref(unknown_anchor(), *it);
-        }
-        auto val = new T(args ...);
-        map.insert(val);
-        return ref(unknown_anchor(), val);
-    }
-};
-
-//------------------------------------------------------------------------------
-
-static ConstSet<GlobalString> globalstrings;
-
-GlobalString::GlobalString(const char *_data, size_t _count)
-    : Pure(VK_GlobalString,
-        refer_type(
-            array_type(TYPE_I8, _count).assert_ok(),
-            PTF_NonWritable,
-            SYM_SPIRV_StorageClassPrivate)),
-        value(_data, _count) {
-}
-
-bool GlobalString::key_equal(const GlobalString *other) const {
-    return value == other->value;
-}
-
-std::size_t GlobalString::hash() const {
-    return hash_bytes(value.data(), value.size());
-}
-
-GlobalStringRef GlobalString::from(const char *_data, size_t _count) {
-    return globalstrings.from(_data, _count);
-}
-
-//------------------------------------------------------------------------------
-
 PureCast::PureCast(const Type *type, const PureRef &_value)
     : Pure(VK_PureCast, type), value(_value) {}
 
@@ -731,6 +678,7 @@ PureRef PureCast::from(const Type *type, PureRef value) {
     if (value.isa<Undef>()) {
         return Undef::from(type);
     } else if (value.isa<Const>()
+        && !value.isa<GlobalString>()
         && (storage_kind(type) == storage_kind(value->get_type()))) {
         ConstRef result;
         switch (value->kind()) {
@@ -1647,6 +1595,87 @@ Const::Const(ValueKind _kind, const Type *type)
 
 //------------------------------------------------------------------------------
 
+template<typename T>
+struct ConstSet {
+    struct Hash {
+        std::size_t operator()(const T *k) const {
+            return k->hash();
+        }
+    };
+
+    struct Equal {
+        std::size_t operator()(const T *self, const T *other) const {
+            return self->key_equal(other);
+        }
+    };
+
+    std::unordered_set<T *, Hash, Equal> map;
+
+    template<typename ... Args>
+    TValueRef<T> from(Args ... args) {
+        T key(args ...);
+        auto it = map.find(&key);
+        if (it != map.end()) {
+            return ref(unknown_anchor(), *it);
+        }
+        auto val = new T(args ...);
+        map.insert(val);
+        return ref(unknown_anchor(), val);
+    }
+};
+
+//------------------------------------------------------------------------------
+
+static ConstSet<GlobalString> globalstrings;
+
+GlobalString::GlobalString(const char *_data, size_t _count)
+    : Const(VK_GlobalString,
+        refer_type(
+            array_type(TYPE_I8, _count).assert_ok(),
+            PTF_NonWritable,
+            SYM_SPIRV_StorageClassPrivate)),
+        value(_data, _count) {
+}
+
+bool GlobalString::key_equal(const GlobalString *other) const {
+    return value == other->value;
+}
+
+std::size_t GlobalString::hash() const {
+    return hash_bytes(value.data(), value.size());
+}
+
+GlobalStringRef GlobalString::join(const GlobalStringRef &a, const GlobalStringRef &b) {
+    size_t ac = a->value.size();
+    size_t bc = b->value.size();
+    size_t cc = ac + bc;
+    SCOPES_BEGIN_TEMP_STRING(tmp, cc);
+    memcpy(tmp, a->value.data(), sizeof(char) * ac);
+    memcpy(tmp + ac, b->value.data(), sizeof(char) * bc);
+    auto result = GlobalString::from(tmp, cc);
+    SCOPES_END_TEMP_STRING(tmp);
+    return result;
+}
+
+GlobalStringRef GlobalString::from(const char *_data, size_t _count) {
+    assert(_data);
+    return globalstrings.from(_data, _count);
+}
+
+GlobalStringRef GlobalString::from_cstr(const char *_data) {
+    if (_data) {
+        return globalstrings.from(_data, strlen(_data));
+    } else {
+        return GlobalStringRef();
+    }
+}
+
+GlobalStringRef GlobalString::from_stdstring(const std::string &str) {
+    return from(str.data(), str.size());
+}
+
+//------------------------------------------------------------------------------
+
 static ConstSet<ConstInt> constints;
 
 ConstInt::ConstInt(const Type *type, const std::vector<uint64_t> &_value)
@@ -1786,8 +1815,17 @@ ConstAggregateRef ConstAggregate::none_from() {
 }
 
 ConstAggregateRef ConstAggregate::ast_from(const ValueRef &node) {
-    auto ptr = ConstPointer::from(TYPE__Value, node.unref()).unref();
-    return from(TYPE_ValueRef, { ptr, ConstPointer::anchor_from(node.anchor()).unref() });
+    const Type *container_type = TYPE_ValueRef;
+    const Type *content_type = TYPE__Value;
+    switch(node->kind()) {
+    case VK_GlobalString: {
+        container_type = TYPE_GlobalStringRef;
+        content_type = TYPE__GlobalString;
+    } break;
+    default: break;
+    }
+    auto ptr = ConstPointer::from(content_type, node.unref()).unref();
+    return from(container_type, { ptr, ConstPointer::anchor_from(node.anchor()).unref() });
 }
 
 ConstRef get_field(const ConstAggregateRef &value, int i) {
@@ -1821,10 +1859,6 @@ ConstPointerRef ConstPointer::type_from(const Type *type) {
 
 ConstPointerRef ConstPointer::closure_from(const Closure *closure) {
     return from(TYPE_Closure, closure);
-}
-
-ConstPointerRef ConstPointer::string_from(const String *str) {
-    return from(TYPE_String, str);
 }
 
 ConstPointerRef ConstPointer::list_from(const List *list) {
@@ -2155,9 +2189,9 @@ Closure *Closure::from(const TemplateRef &func, const FunctionRef &frame) {
 StyledStream &Closure::stream(StyledStream &ost) const {
     ost << Style_Comment << "<" << Style_None;
     if (frame)
-        ost << Style_Symbol << frame->name.name()->data << "λ" << (void *)frame.unref() << Style_None;
+        ost << Style_Symbol << frame->name.name() << "λ" << (void *)frame.unref() << Style_None;
     ost << Style_Comment << "::" << Style_None
-        << Style_Symbol << func->name.name()->data << "λ" << (void *)func.unref() << Style_None
+        << Style_Symbol << func->name.name() << "λ" << (void *)func.unref() << Style_None
         << Style_Comment << ">" << Style_None;
     return ost;
 }

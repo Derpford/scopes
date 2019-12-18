@@ -7,6 +7,7 @@
 #include "array_type.hpp"
 #include "../error.hpp"
 #include "../hash.hpp"
+#include "../styled_stream.hpp"
 
 #include <unordered_set>
 

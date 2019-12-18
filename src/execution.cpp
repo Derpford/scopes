@@ -43,9 +43,9 @@ static LLVMTargetMachineRef object_target_machine = nullptr;
 //static std::vector<void *> loaded_libs;
 static std::unordered_map<Symbol, void *, Symbol::Hash> cached_dlsyms;
 
-const String *get_default_target_triple() {
+std::string get_default_target_triple() {
     auto str = LLVMGetDefaultTargetTriple();
-    auto result = String::from_cstr(str);
+    auto result = std::string(str);
     LLVMDisposeMessage(str);
     return result;
 }
@@ -62,7 +62,7 @@ SCOPES_RESULT(uint64_t) get_address(const char *name) {
         SCOPES_ERROR(ExecutionEngineFailed, LLVMGetErrorMessage(err));
     }
     if (!addr) {
-        SCOPES_ERROR(RTGetAddressFailed, Symbol(String::from_cstr(name)));
+        SCOPES_ERROR(RTGetAddressFailed, Symbol(name));
     }
     return addr;
 }
@@ -101,7 +101,7 @@ static void *retrieve_symbol(const char *name) {
 }
 
 void *local_aware_dlsym(Symbol name) {
-    return retrieve_symbol(name.name()->data);
+    return retrieve_symbol(name.name().c_str());
 }
 
 LLVMTargetMachineRef get_jit_target_machine() {
@@ -218,7 +218,7 @@ SCOPES_RESULT(void) add_module(LLVMModuleRef module, const PointerMap &map,
 #endif
     }
 
-    const String *key = nullptr;
+    std::string key;
     const char *filepath = nullptr;
     if (cache) {
         assert(irbuf);
@@ -317,7 +317,7 @@ skip_cache:
         }
 
         if (cache) {
-            assert(key && irbuf && membuf);
+            assert(!key.empty() && irbuf && membuf);
             set_cache(key, LLVMGetBufferStart(irbuf), LLVMGetBufferSize(irbuf),
                 LLVMGetBufferStart(membuf), LLVMGetBufferSize(membuf));
         }

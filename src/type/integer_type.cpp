@@ -7,6 +7,7 @@
 #include "integer_type.hpp"
 #include "../utils.hpp"
 #include "../dyn_cast.inc"
+#include "../styled_stream.hpp"
 
 namespace scopes {
 

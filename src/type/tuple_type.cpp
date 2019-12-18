@@ -13,6 +13,8 @@
 #include "array_type.hpp"
 #include "vector_type.hpp"
 #include "typename_type.hpp"
+#include "../styled_stream.hpp"
+#include "../string.hpp"
 
 #include <assert.h>
 
@@ -142,7 +144,7 @@ SCOPES_RESULT(Symbol) TupleType::field_name(size_t i) const {
 }
 
 std::vector<Symbol> TupleType::find_closest_field_match(Symbol name) const {
-    const String *s = name.name();
+    auto &&s = name.name();
     std::unordered_set<Symbol, Symbol::Hash> done;
     std::vector<Symbol> best_syms;
     size_t best_dist = (size_t)-1;

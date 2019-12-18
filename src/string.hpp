@@ -17,6 +17,17 @@
 
 namespace scopes {
 
+const char STRING_ESCAPE_CHARS[] = "\"";
+
+// small strings on the stack, big strings on the heap
+#define SCOPES_BEGIN_TEMP_STRING(NAME, SIZE) \
+    bool NAME ## _use_stack = ((SIZE) < 1024); \
+    char stack ## NAME[NAME ## _use_stack?((SIZE)+1):1]; \
+    char *NAME = (NAME ## _use_stack?stack ## NAME:((char *)malloc(sizeof(char) * ((SIZE)+1))));
+
+#define SCOPES_END_TEMP_STRING(NAME) \
+    if (!NAME ## _use_stack) free(NAME);
+
 //------------------------------------------------------------------------------
 // STRING
 //------------------------------------------------------------------------------
@@ -29,6 +40,7 @@ typedef std::string CppString;
 typedef std::stringstream StringStream;
 #endif
 
+/*
 struct String {
 protected:
     String(const char *_data, size_t _count);
@@ -50,6 +62,8 @@ public:
 
     std::size_t hash() const;
 
+    std::string to_stdstring() const;
+
     struct Hash {
         std::size_t operator()(const String *s) const;
     };
@@ -62,6 +76,9 @@ public:
     size_t count;
 };
 
+typedef std::vector<const String *> Strings;
+*/
+
 struct StyledString {
     StringStream _ss;
     StyledStream out;
@@ -70,21 +87,23 @@ struct StyledString {
     StyledString(StreamStyleFunction ssf);
 
     static StyledString plain();
-    const String *str() const;
+    std::string str() const;
     CppString cppstr() const;
 };
 
-typedef std::vector<const String *> Strings;
+std::string vformat( const char *fmt, va_list va );
 
-const String *vformat( const char *fmt, va_list va );
-
-const String *format( const char *fmt, ...);
+std::string format( const char *fmt, ...);
 
 // computes the levenshtein distance between two strings
-size_t distance(const String *_s, const String *_t);
+size_t distance(const std::string &_s, const std::string &_t);
 
 int unescape_string(char *buf);
 int escape_string(char *buf, const char *str, int strcount, const char *quote_chars);
+
+StyledStream& stream_escaped(StyledStream& ost, const std::string &str, const char *escape_chars);
+
+uint64_t hash_string(const std::string &s);
 
 } // namespace scopes
 

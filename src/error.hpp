@@ -21,13 +21,11 @@ namespace scopes {
 //------------------------------------------------------------------------------
 
 struct Type;
-struct String;
 struct Anchor;
 struct StyledStream;
 
 typedef const Anchor *PAnchor;
 typedef const Type *PType;
-typedef const String *PString;
 typedef const char *Rawstring;
 typedef const Scope *PScope;
 
@@ -68,10 +66,10 @@ formatters:
         "format: unexpected line break in character sequence") \
     T(ParserInvalidIntegerSuffix, \
         "format: invalid suffix for integer literal: '%0'", \
-        PString) \
+        std::string) \
     T(ParserInvalidRealSuffix, \
         "format: invalid suffix for real literal: '%0'", \
-        PString) \
+        std::string) \
     T(ParserUnclosedOpenBracket, \
         "format: parenthesis never closed" \
         "%0 opened here", \
@@ -149,11 +147,11 @@ formatters:
         "constant expected, got %1", \
         ValueKind) \
     T(ConstantValueKindMismatch, \
-        "constant value of type %0 expected, got %1", \
+        "constant value of kind %0 expected, got %1", \
         ValueKind, ValueKind) \
     T(TypedConstantValueKindMismatch, \
-        "constant value of type %0 expected, got %1", \
-        PType, ValueKind) \
+        "constant value of type %0 expected, got %1 of type %2", \
+        PType, ValueKind, PType) \
     T(TooManyArguments, \
         "at most %0 argument(s) expected, got %1", \
         int, int) \
@@ -427,7 +425,7 @@ formatters:
 #define SCOPES_RUNTIME_ERROR_KIND() \
     T(RTLoadLibraryFailed, \
         "runtime: error loading library %0: %1", \
-        PString, Rawstring) \
+        std::string, Rawstring) \
     T(RTGetAddressFailed, \
         "runtime: could not find symbol '%0' in C namespace", \
         Symbol) \
@@ -456,10 +454,10 @@ formatters:
         Symbol, PType) \
     T(RTRegExError, \
         "runtime: error in regular expression: %0", \
-        PString) \
+        std::string) \
     T(RTUnableToOpenFile, \
         "runtime: can't open file: %0", \
-        PString) \
+        std::string) \
     T(RTUncountableStorageType, \
         "runtime: storage type %0 has no count", \
         PType) \
@@ -490,7 +488,7 @@ formatters:
         Symbol) \
 
 #define SCOPES_ERROR_KIND() \
-    T(User, "%0", PString) \
+    T(User, "%0", std::string) \
     T(ExecutionEngineFailed, \
         "execution engine failed: %0", \
         Rawstring) \

@@ -58,7 +58,7 @@ enum TypeKind {
 
 struct TypeEntry {
     ValueRef expr;
-    const String *doc;
+    GlobalStringRef doc;
 };
 
 struct Type {
@@ -113,6 +113,8 @@ typedef std::vector<const Type *> Types;
     T(TYPE_Builtin, "Builtin") \
     T(TYPE__Value, "_Value") \
     T(TYPE_ValueRef, "Value") \
+    T(TYPE__GlobalString, "_GlobalString") \
+    T(TYPE_GlobalStringRef, "GlobalString") \
     \
     T(TYPE_Bool, "bool") \
     \
@@ -134,7 +136,6 @@ typedef std::vector<const Type *> Types;
     \
     T(TYPE_List, "list") \
     T(TYPE_Anchor, "Anchor") \
-    T(TYPE_String, "string") \
     \
     T(TYPE_Scope, "Scope") \
     T(TYPE_SourceFile, "SourceFile") \

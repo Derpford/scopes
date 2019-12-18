@@ -165,6 +165,7 @@ int escape_string(char *buf, const char *str, int strcount, const char *quote_ch
 // STRING
 //------------------------------------------------------------------------------
 
+/*
 static std::unordered_set<const String *, String::Hash, String::KeyEqual> string_map;
 
 //------------------------------------------------------------------------------
@@ -184,6 +185,10 @@ bool String::KeyEqual::operator()( const String *lhs, const String *rhs ) const 
 
 std::size_t String::hash() const {
     return hash_bytes(data, count);
+}
+
+std::string String::to_stdstring() const {
+    return std::string(data, count);
 }
 
 String::String(const char *_data, size_t _count)
@@ -206,15 +211,6 @@ const String *String::from(const char *buf, size_t count) {
 const String *String::from_cstr(const char *s) {
     return from(s, strlen(s));
 }
-
-// small strings on the stack, big strings on the heap
-#define SCOPES_BEGIN_TEMP_STRING(NAME, SIZE) \
-    bool NAME ## _use_stack = ((SIZE) < 1024); \
-    char stack ## NAME[NAME ## _use_stack?((SIZE)+1):1]; \
-    char *NAME = (NAME ## _use_stack?stack ## NAME:((char *)malloc(sizeof(char) * ((SIZE)+1))));
-
-#define SCOPES_END_TEMP_STRING(NAME) \
-    if (!NAME ## _use_stack) free(NAME);
 
 const String *String::join(const String *a, const String *b) {
     size_t ac = a->count;
@@ -259,6 +255,7 @@ StyledStream& operator<<(StyledStream& ost, const String *s) {
     ost << "\"" << Style_None;
     return ost;
 }
+*/
 
 //------------------------------------------------------------------------------
 
@@ -274,8 +271,8 @@ StyledString StyledString::plain() {
     return StyledString(stream_plain_style);
 }
 
-const String *StyledString::str() const {
-    return String::from_stdstring(_ss.str());
+std::string StyledString::str() const {
+    return _ss.str();
 }
 
 CppString StyledString::cppstr() const {
@@ -284,32 +281,32 @@ CppString StyledString::cppstr() const {
 
 //------------------------------------------------------------------------------
 
-const String *vformat( const char *fmt, va_list va ) {
+std::string vformat( const char *fmt, va_list va ) {
     va_list va2;
     va_copy(va2, va);
     size_t size = stb_vsnprintf( nullptr, 0, fmt, va2 );
     va_end(va2);
     SCOPES_BEGIN_TEMP_STRING(tmp, size);
     stb_vsnprintf( tmp, size + 1, fmt, va );
-    const String *result = String::from_cstr(tmp);
+    auto result = std::string(tmp);
     SCOPES_END_TEMP_STRING(tmp);
     return result;
 }
 
-const String *format( const char *fmt, ...) {
+std::string format( const char *fmt, ...) {
     va_list va;
     va_start(va, fmt);
-    const String *result = vformat(fmt, va);
+    auto result = vformat(fmt, va);
     va_end(va);
     return result;
 }
 
 // computes the levenshtein distance between two strings
-size_t distance(const String *_s, const String *_t) {
-    const char *s = _s->data;
-    const char *t = _t->data;
-    const size_t n = _s->count;
-    const size_t m = _t->count;
+size_t distance(const std::string &_s, const std::string &_t) {
+    const char *s = _s.data();
+    const char *t = _t.data();
+    const size_t n = _s.size();
+    const size_t m = _t.size();
     if (!m) return n;
     if (!n) return m;
 
@@ -339,6 +336,19 @@ size_t distance(const String *_s, const String *_t) {
     //std::cout << "lev(" << s << ", " << t << ") = " << v0[m] << std::endl;
 
     return v0[m];
+}
+
+StyledStream& stream_escaped(StyledStream& ost, const std::string &str, const char *escape_chars) {
+    auto c = escape_string(nullptr, str.data(), str.size(), escape_chars);
+    SCOPES_BEGIN_TEMP_STRING(tmp, c);
+    escape_string(tmp, str.data(), str.size(), escape_chars);
+    ost << tmp;
+    SCOPES_END_TEMP_STRING(tmp);
+    return ost;
+}
+
+uint64_t hash_string(const std::string &s) {
+    return hash_bytes(s.data(), s.size());
 }
 
 } // namespace scopes

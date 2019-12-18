@@ -22,6 +22,7 @@
 #include "qualifiers.hpp"
 #include "qualifier.inc"
 #include "verify_tools.inc"
+#include "string.hpp"
 
 #ifdef SCOPES_WIN32
 #include "stdlib_ex.h"
@@ -405,8 +406,8 @@ struct LLVMIRGenerator {
         static char _fname[PATH_MAX];
         static char _dname[PATH_MAX];
         auto str = sf.name();
-        strncpy(_fname, str->data, PATH_MAX);
-        strncpy(_dname, str->data, PATH_MAX);
+        strncpy(_fname, str.data(), PATH_MAX);
+        strncpy(_dname, str.data(), PATH_MAX);
 
         char *fname = basename(_fname);
         char *dname = dirname(_dname);
@@ -440,9 +441,9 @@ struct LLVMIRGenerator {
 
         auto name = l->name.name();
         LLVMMetadataRef difunc = LLVMDIBuilderCreateFunction(
-            di_builder, difile, name->data, name->count,
+            di_builder, difile, name.data(), name.size(),
             // todo: insert actual linkage name here
-            name->data, name->count,
+            name.data(), name.size(),
             difile, anchor->lineno, disrt, false, true,
             anchor->lineno, LLVMDIFlagZero, false);
 
@@ -810,7 +811,7 @@ struct LLVMIRGenerator {
                 }
             }
             return LLVMStructCreateNamed(
-                LLVMGetGlobalContext(), tn->name()->data);
+                LLVMGetGlobalContext(), tn->name().c_str());
         } break;
         case TK_Function: {
             auto fi = cast<FunctionType>(type);
@@ -1068,7 +1069,7 @@ struct LLVMIRGenerator {
             auto it = func_export_table.find(node.unref());
             if (it != func_export_table.end()) {
                 auto str = it->second.name();
-                name = std::string(str->data, str->count);
+                name = str;
                 is_export = true;
             }
         } else {
@@ -1079,7 +1080,7 @@ struct LLVMIRGenerator {
                 if (funcname == SYM_Unnamed) {
                     ss.out << "unnamed";
                 } else {
-                    ss.out << funcname.name()->data;
+                    ss.out << funcname.name();
                 }
 
                 ss.out << "<";
@@ -1222,7 +1223,7 @@ struct LLVMIRGenerator {
         label_info.bb_merge = nullptr;
         auto rtype = node->get_type();
         if (is_returning(rtype)) {
-            label_info.bb_merge = LLVMAppendBasicBlock(func, node->name.name()->data);
+            label_info.bb_merge = LLVMAppendBasicBlock(func, node->name.name().c_str());
             position_builder_at_end(label_info.bb_merge);
             SCOPES_CHECK_RESULT(build_phi(label_info.merge_values, node));
         }
@@ -2033,7 +2034,7 @@ struct LLVMIRGenerator {
         SCOPES_RESULT_TYPE(LLVMValueRef);
         LLVMTypeRef LLT = SCOPES_GET_RESULT(type_to_llvm_type(node->get_type()));
         //auto ET = LLVMGetElementType(LLT);
-        auto data = LLVMConstString(node->value.data(), node->value.size(), true);
+        auto data = LLVMConstString(node->value.data(), node->value.size(), false);
         LLVMValueRef result = LLVMAddGlobal(module, LLVMTypeOf(data), "");
         LLVMSetInitializer(result, data);
         LLVMSetGlobalConstant(result, true);
@@ -2059,7 +2060,7 @@ struct LLVMIRGenerator {
                     if (globname == SYM_Unnamed) {
                         ss.out << "unnamed";
                     } else {
-                        ss.out << globname.name()->data;
+                        ss.out << globname.name();
                     }
                     ss.out << "<";
                     stream_type_name(ss.out, pi->element_type);
@@ -2074,7 +2075,7 @@ struct LLVMIRGenerator {
                         if (globname == SYM_Unnamed) {
                             ss.out << "unnamed";
                         } else {
-                            ss.out << globname.name()->data;
+                            ss.out << globname.name();
                         }
                         ss.out << "<";
                         stream_type_name(ss.out, pi->element_type);
@@ -2111,10 +2112,10 @@ struct LLVMIRGenerator {
                 }
                 return result;
             } else {
-                const String *namestr = node->name.name();
-                const char *name = namestr->data;
+                auto namestr = node->name.name();
+                const char *name = namestr.c_str();
                 assert(name);
-                if ((namestr->count > 5) && !strncmp(name, "llvm.", 5)) {
+                if ((namestr.size() > 5) && !strncmp(name, "llvm.", 5)) {
                     result = LLVMGetNamedFunction(module, name);
                     if (result) {
                         LLT = LLVMPointerType(LLT, 0);
@@ -2578,10 +2579,10 @@ struct LLVMIRGenerator {
     }
 
     // for generating object files
-    SCOPES_RESULT(LLVMModuleRef) generate(const String *name, const Scope *table) {
+    SCOPES_RESULT(LLVMModuleRef) generate(const std::string &name, const Scope *table) {
         SCOPES_RESULT_TYPE(LLVMModuleRef);
 
-        setup_generate(name->data);
+        setup_generate(name.c_str());
 
         std::vector<LLVMValueRef> exported_globals;
 
@@ -2628,7 +2629,7 @@ struct LLVMIRGenerator {
     SCOPES_RESULT(ModuleValuePair) generate(const FunctionRef &entry) {
         SCOPES_RESULT_TYPE(ModuleValuePair);
 
-        const char *name = entry->name.name()->data;
+        const char *name = entry->name.name().c_str();
         setup_generate(name);
 
         {
@@ -2769,8 +2770,8 @@ public:
 };
 #endif
 
-SCOPES_RESULT(void) compile_object(const String *triple,
-    CompilerFileKind kind, const String *path, const Scope *scope, uint64_t flags) {
+SCOPES_RESULT(void) compile_object(const std::string &triple,
+    CompilerFileKind kind, const std::string &path, const Scope *scope, uint64_t flags) {
     SCOPES_RESULT_TYPE(void);
     Timer sum_compile_time(TIMER_Compile);
 #if SCOPES_COMPILE_WITH_DEBUG_INFO
@@ -2808,7 +2809,7 @@ SCOPES_RESULT(void) compile_object(const String *triple,
         LLVMDumpModule(module);
     }
 
-    auto tt = LLVMNormalizeTargetTriple(triple->data);
+    auto tt = LLVMNormalizeTargetTriple(triple.c_str());
     static char triplestr[1024];
     strncpy(triplestr, tt, 1024);
     LLVMDisposeMessage(tt);
@@ -2823,7 +2824,7 @@ SCOPES_RESULT(void) compile_object(const String *triple,
         LLVMCodeGenLevelDefault, LLVMRelocPIC, LLVMCodeModelJITDefault);
     assert(tm);
 
-    char *path_cstr = strdup(path->data);
+    char *path_cstr = strdup(path.c_str());
     LLVMBool failed = false;
     switch(kind) {
     case CFK_Object: {
@@ -2954,7 +2955,7 @@ SCOPES_RESULT(ConstPointerRef) compile(const FunctionRef &fn, uint64_t flags) {
 #if 1
     for (auto sym : bindsyms) {
         void *ptr = (void *)SCOPES_GET_RESULT(get_address(sym.c_str()));
-        set_address_name(ptr, String::from(sym.c_str(), sym.size()));
+        set_address_name(ptr, sym);
     }
 #endif
 

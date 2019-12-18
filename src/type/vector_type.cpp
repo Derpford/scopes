@@ -9,6 +9,7 @@
 #include "../dyn_cast.inc"
 #include "../hash.hpp"
 #include "../utils.hpp"
+#include "../styled_stream.hpp"
 
 #include <unordered_set>
 

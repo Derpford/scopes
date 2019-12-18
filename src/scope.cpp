@@ -7,6 +7,7 @@
 #include "scope.hpp"
 #include "value.hpp"
 #include "error.hpp"
+#include "string.hpp"
 
 #include <algorithm>
 #include <unordered_set>
@@ -17,7 +18,7 @@ namespace scopes {
 // SCOPE
 //------------------------------------------------------------------------------
 
-Scope::Scope(const String *_doc, const Scope *_parent) :
+Scope::Scope(const GlobalStringRef &_doc, const Scope *_parent) :
     map(nullptr),
     index(0),
     name(ConstRef()),
@@ -30,7 +31,7 @@ Scope::Scope(const String *_doc, const Scope *_parent) :
     }
 }
 
-Scope::Scope(const ConstRef &_name, const ValueRef &_value, const String *_doc, const Scope *_next) :
+Scope::Scope(const ConstRef &_name, const ValueRef &_value, const GlobalStringRef &_doc, const Scope *_next) :
     map(nullptr),
     name(_name),
     value(_value),
@@ -46,7 +47,7 @@ const Scope *Scope::parent() const {
     return start->next;
 }
 
-const String *Scope::header_doc() const {
+GlobalStringRef Scope::header_doc() const {
     return start->doc;
 }
 
@@ -108,7 +109,7 @@ const Scope::Map &Scope::table() const {
 const Scope *Scope::reparent_from(const Scope *content, const Scope *parent) {
     auto &&map = content->table();
     // we lose our scopes docstring and instead reuse the parents docstring
-    const String *doc = nullptr;
+    GlobalStringRef doc;
     if (parent) {
         doc = parent->header_doc();
     } else {
@@ -129,7 +130,7 @@ const Scope *Scope::reparent_from(const Scope *content, const Scope *parent) {
     return self;
 }
 
-const Scope *Scope::bind_from(const ConstRef &name, const ValueRef &value, const String *doc, const Scope *next) {
+const Scope *Scope::bind_from(const ConstRef &name, const ValueRef &value, const GlobalStringRef &doc, const Scope *next) {
     assert(value);
     return new Scope(name, value, doc, next);
 }
@@ -138,17 +139,21 @@ const Scope *Scope::unbind_from(const ConstRef &name, const Scope *next) {
     // check if value is contained
     ValueRef dest;
     if (next->lookup(name, dest)) {
-        return new Scope(name, ValueRef(), nullptr, next);
+        return new Scope(name, ValueRef(), GlobalStringRef(), next);
     }
     return next;
 }
 
-const Scope *Scope::from(const String *doc, const Scope *parent) {
+const Scope *Scope::from(const GlobalStringRef &doc, const Scope *parent) {
     return new Scope(doc, parent);
 }
 
+const Scope *Scope::from(const Scope *parent) {
+    return from(GlobalStringRef(), parent);
+}
+
 std::vector<Symbol> Scope::find_closest_match(Symbol name) const {
-    const String *s = name.name();
+    std::string s = name.name();
     std::unordered_set<Symbol, Symbol::Hash> done;
     std::vector<Symbol> best_syms;
     size_t best_dist = (size_t)-1;
@@ -201,7 +206,7 @@ std::vector<Symbol> Scope::find_closest_match(Symbol name) const {
 }
 
 std::vector<Symbol> Scope::find_elongations(Symbol name) const {
-    const String *s = name.name();
+    std::string s = name.name();
 
     std::unordered_set<Symbol, Symbol::Hash> done;
     std::vector<Symbol> found;
@@ -216,8 +221,9 @@ std::vector<Symbol> Scope::find_elongations(Symbol name) const {
                     if (!done.count(sym)) {
                         auto &&value = self->map->values[i];
                         if (value.value) {
-                            if (sym.name()->count >= s->count &&
-                                    (sym.name()->substr(0, s->count) == s))
+                            auto symstr = sym.name();
+                            if ((symstr.size() >= s.size()) &&
+                                    (std::string(symstr, 0, s.size()) == s))
                                 found.push_back(sym);
                         }
                         done.insert(sym);
@@ -231,8 +237,9 @@ std::vector<Symbol> Scope::find_elongations(Symbol name) const {
                 Symbol sym = Symbol::wrap(key.cast<ConstInt>()->value());
                 if (!done.count(sym)) {
                     if (self->value) {
-                        if (sym.name()->count >= s->count &&
-                                (sym.name()->substr(0, s->count) == s))
+                        auto symstr = sym.name();
+                        if ((symstr.size() >= s.size()) &&
+                                (std::string(symstr, 0, s.size()) == s))
                             found.push_back(sym);
                     }
                     done.insert(sym);
@@ -242,11 +249,11 @@ std::vector<Symbol> Scope::find_elongations(Symbol name) const {
         self = self->next;
     } while (self);
     std::sort(found.begin(), found.end(), [](Symbol a, Symbol b){
-                return a.name()->count < b.name()->count; });
+                return a.name().size() < b.name().size(); });
     return found;
 }
 
-bool Scope::lookup(const ConstRef &name, ValueRef &dest, const String *&doc, size_t depth) const {
+bool Scope::lookup(const ConstRef &name, ValueRef &dest, GlobalStringRef &doc, size_t depth) const {
     const Scope *self = this;
     const Scope *last_end = this;
     int iterations = 0;
@@ -295,11 +302,11 @@ bool Scope::lookup(const ConstRef &name, ValueRef &dest, const String *&doc, siz
 }
 
 bool Scope::lookup(const ConstRef &name, ValueRef &dest, size_t depth) const {
-    const String *doc;
+    GlobalStringRef doc;
     return lookup(name, dest, doc, depth);
 }
 
-bool Scope::lookup_local(const ConstRef &name, ValueRef &dest, const String *&doc) const {
+bool Scope::lookup_local(const ConstRef &name, ValueRef &dest, GlobalStringRef &doc) const {
     return lookup(name, dest, doc, 0);
 }
 
@@ -312,7 +319,7 @@ StyledStream &Scope::stream(StyledStream &ss) const {
     size_t count = this->count();
     size_t levelcount = this->levelcount();
     ss << Style_Keyword << "Scope" << Style_Comment << "<" << Style_None
-        << format("L:%i T:%i in %i levels", count, totalcount, levelcount)->data
+        << format("L:%i T:%i in %i levels", count, totalcount, levelcount)
         << Style_Comment << ">" << Style_None;
     return ss;
 }

@@ -14,7 +14,6 @@
 
 namespace scopes {
 
-struct String;
 struct Symbol;
 struct List;
 struct Anchor;
@@ -128,8 +127,8 @@ struct LexerParser {
     SCOPES_RESULT(Token) read_token();
 
     Symbol get_symbol();
-    const String *get_string();
-    const String *get_block_string();
+    GlobalStringRef get_string();
+    GlobalStringRef get_block_string();
     ValueRef get_number();
     //Const *get();
 

@@ -22,6 +22,7 @@
 #include "qualifier.inc"
 #include "verify_tools.inc"
 #include "symbol_enum.inc"
+#include "string.hpp"
 
 #include "glslang/SpvBuilder.h"
 #include "glslang/disassemble.h"
@@ -259,7 +260,7 @@ struct SPIRVGenerator {
         spv::Id result = 0;
         // prefix: spirv
         #define T(NAME) \
-            if (!strncmp(str->data, "spirv." #NAME, sizeof("spirv." #NAME))) { \
+            if (!strncmp(str.c_str(), "spirv." #NAME, sizeof("spirv." #NAME))) { \
                 result = spv::NAME; \
             } else
         SCOPES_INTR_SPIRV_OPS()
@@ -279,7 +280,7 @@ struct SPIRVGenerator {
         spv::Id result = 0;
         // prefix: GLSLstd450
         #define T(NAME) \
-            if (!strncmp(str->data, "GLSL.std.450." #NAME, sizeof("GLSL.std.450." #NAME))) { \
+            if (!strncmp(str.c_str(), "GLSL.std.450." #NAME, sizeof("GLSL.std.450." #NAME))) { \
                 result = GLSLstd450 ## NAME; \
             } else
         SCOPES_GLSL_STD_450_FUNCS()
@@ -455,7 +456,7 @@ struct SPIRVGenerator {
         }
         const char *name = "tuple";
         if (tname) {
-            name = tname->name()->data;
+            name = tname->name().c_str();
         }
         auto id = builder.makeStructType(members, name);
         if (flags & GF_BufferBlock) {
@@ -472,7 +473,7 @@ struct SPIRVGenerator {
             if (kq) {
                 key = kq->key;
             }
-            builder.addMemberName(id, i, key.name()->data);
+            builder.addMemberName(id, i, key.name().c_str());
             if (flags & GF_Volatile) {
                 builder.addMemberDecoration(id, i, spv::DecorationVolatile);
             }
@@ -793,11 +794,11 @@ struct SPIRVGenerator {
             funcname = node->name;
         }
 
-        const char *name = nullptr;
+        std::string name;
         if (root_function && (funcname == SYM_Unnamed)) {
             name = "unnamed";
         } else {
-            name = funcname.name()->data;
+            name = funcname.name();
         }
 
         auto ilfunctype = extract_function_type(node->get_type());
@@ -815,7 +816,7 @@ struct SPIRVGenerator {
 
         auto old_bb = builder.getBuildPoint();
         auto func = builder.makeFunctionEntry(
-            spv::NoPrecision, rettype, name,
+            spv::NoPrecision, rettype, name.c_str(),
             paramtypes, decorations, &bb);
         func2func[node.unref()] = func;
         builder.setBuildPoint(old_bb);
@@ -1967,7 +1968,7 @@ struct SPIRVGenerator {
         SCOPES_RESULT_TYPE(spv::Id);
         spv::StorageClass sc = SCOPES_GET_RESULT(storage_class_from_extern_class(
             node->storage_class));
-        const char *name = nullptr;
+        std::string name;
         spv::BuiltIn builtin = spv::BuiltInMax;
         switch(node->name.value()) {
         #define T(NAME) \
@@ -1976,11 +1977,11 @@ struct SPIRVGenerator {
             B_SPIRV_BUILTINS()
         #undef T
             default:
-                name = node->name.name()->data;
+                name = node->name.name();
                 break;
         }
         auto ty = SCOPES_GET_RESULT(type_to_spirv_type(node->element_type, node->flags));
-        auto id = builder.createVariable(sc, ty, name);
+        auto id = builder.createVariable(sc, ty, name.c_str());
         if (builtin != spv::BuiltInMax) {
             builder.addDecoration(id, spv::DecorationBuiltIn, builtin);
         }
@@ -2340,8 +2341,8 @@ SCOPES_RESULT(void) optimize_spirv(spv_target_env env, std::vector<unsigned int>
     return {};
 }
 
-SCOPES_RESULT(const String *) compile_spirv(Symbol target, const FunctionRef &fn, uint64_t flags) {
-    SCOPES_RESULT_TYPE(const String *);
+SCOPES_RESULT(GlobalStringRef) compile_spirv(Symbol target, const FunctionRef &fn, uint64_t flags) {
+    SCOPES_RESULT_TYPE(GlobalStringRef);
     Timer sum_compile_time(TIMER_CompileSPIRV);
 
     //SCOPES_CHECK_RESULT(fn->verify_compilable());
@@ -2380,11 +2381,11 @@ SCOPES_RESULT(const String *) compile_spirv(Symbol target, const FunctionRef &fn
 
     size_t bytesize = sizeof(unsigned int) * result.size();
 
-    return String::from((char *)&result[0], bytesize);
+    return ref(fn.anchor(), GlobalString::from((char *)&result[0], bytesize));
 }
 
-SCOPES_RESULT(const String *) compile_glsl(int version, Symbol target, const FunctionRef &fn, uint64_t flags) {
-    SCOPES_RESULT_TYPE(const String *);
+SCOPES_RESULT(GlobalStringRef) compile_glsl(int version, Symbol target, const FunctionRef &fn, uint64_t flags) {
+    SCOPES_RESULT_TYPE(GlobalStringRef);
     Timer sum_compile_time(TIMER_CompileSPIRV);
 
     //SCOPES_CHECK_RESULT(fn->verify_compilable());
@@ -2450,7 +2451,7 @@ SCOPES_RESULT(const String *) compile_glsl(int version, Symbol target, const Fun
         std::cout << source << std::endl;
     }
 
-    return String::from_stdstring(source);
+    return ref(fn.anchor(), GlobalString::from_stdstring(source));
 }
 
 } // namespace scopes

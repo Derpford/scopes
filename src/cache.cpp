@@ -179,7 +179,7 @@ const char *get_cache_dir() {
     return cache_dir;
 }
 
-const String *get_cache_key(const char *content, size_t size) {
+std::string get_cache_key(const char *content, size_t size) {
     // split into four parts, hash each part -> 256 bits
     uint64_t h[4];
     memset(h, 0, sizeof(h));
@@ -197,15 +197,15 @@ const String *get_cache_key(const char *content, size_t size) {
     for (int i = 0; i < 4; ++i) {
         snprintf(key + i*16, 17, "%016" PRIx64, h[i]);
     }
-    return String::from(key, 64);
+    return std::string(key, 64);
 }
 
-const char *get_cache_key_file(const String *key) {
+const char *get_cache_key_file(const std::string &key) {
 #if SCOPES_CACHE_WRITE_KEY
     init_cache();
 
     static char filepath[PATH_MAX];
-    snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_KEY_PATTERN, cache_dir, key->data);
+    snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_KEY_PATTERN, cache_dir, key.c_str());
 
     struct stat s;
     if( stat(filepath, &s) == 0 ) {
@@ -224,11 +224,11 @@ const char *get_cache_key_file(const String *key) {
     return nullptr;
 }
 
-const char *get_cache_file(const String *key) {
+const char *get_cache_file(const std::string &key) {
     init_cache();
 
     static char filepath[PATH_MAX];
-    snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_PATTERN, cache_dir, key->data);
+    snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_PATTERN, cache_dir, key.c_str());
 
     struct stat s;
     if( stat(filepath, &s) == 0 ) {
@@ -247,21 +247,21 @@ const char *get_cache_file(const String *key) {
     return nullptr;
 }
 
-void set_cache(const String *key,
+void set_cache(const std::string &key,
     const char *key_content, size_t key_size,
     const char *content, size_t size) {
 
     char filepath[PATH_MAX];
 #if SCOPES_CACHE_WRITE_KEY
     {
-        snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_KEY_PATTERN, cache_dir, key->data);
+        snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_KEY_PATTERN, cache_dir, key.c_str());
         FILE *f = fopen(filepath, "wb");
         fwrite(key_content, key_size, 1, f);
         fclose(f);
     }
 #endif
 
-    snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_PATTERN, cache_dir, key->data);
+    snprintf(filepath, PATH_MAX, SCOPES_FILE_CACHE_PATTERN, cache_dir, key.c_str());
 
     auto f = gzopen(filepath, "wb9");
     if (!f) {

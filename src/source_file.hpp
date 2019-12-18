@@ -8,6 +8,7 @@
 #define SCOPES_SOURCE_FILE_HPP
 
 #include "symbol.hpp"
+#include "valueref.inc"
 
 #include <unordered_map>
 
@@ -29,7 +30,7 @@ public:
     int fd;
     int length;
     void *ptr;
-    const String *_str;
+    const GlobalString *_str;
 
     bool is_open();
 
@@ -37,7 +38,7 @@ public:
 
     static std::unique_ptr<SourceFile> from_file(Symbol _path);
 
-    static std::unique_ptr<SourceFile> from_string(Symbol _path, const String *str);
+    static std::unique_ptr<SourceFile> from_string(Symbol _path, const GlobalString *str);
 
     size_t size() const;
 

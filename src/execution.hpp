@@ -26,7 +26,7 @@ struct String;
 
 typedef std::unordered_map<std::string, const void *> PointerMap;
 
-const String *get_default_target_triple();
+std::string get_default_target_triple();
 SCOPES_RESULT(void) init_execution();
 SCOPES_RESULT(void) add_module(LLVMModuleRef module,
     const PointerMap &map, uint64_t compiler_flags);

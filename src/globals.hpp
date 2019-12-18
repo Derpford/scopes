@@ -33,6 +33,8 @@ namespace scopes {
     T(g_copy, "copy") \
     T(g_free, "free") \
     T(g_getelementptr, "getelementptr") \
+    T(g_reftoptr, "reftoptr") \
+    T(g_ptrtoref, "ptrtoref") \
     T(g_zext, "zext") \
     T(g_sext, "sext") \
     T(g_u64, "u64") \
@@ -57,6 +59,9 @@ namespace scopes {
     T(g_fpext, "fpext") \
     T(g_sc_identity, "sc_identity") \
     T(g_sc_valueref_tag, "sc_valueref_tag") \
+    T(g_sc_globalstring_value, "sc_globalstring_value") \
+    T(g_sc_globalstring_tag, "sc_globalstring_tag") \
+    T(g_sc_globalstring_new, "sc_globalstring_new") \
     T(g_sc_error_append_calltrace, "sc_error_append_calltrace") \
     T(g_sc_template_new, "sc_template_new") \
     T(g_sc_template_append_parameter, "sc_template_append_parameter") \

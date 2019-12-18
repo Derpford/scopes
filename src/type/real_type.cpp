@@ -6,6 +6,7 @@
 
 #include "real_type.hpp"
 #include "../utils.hpp"
+#include "../styled_stream.hpp"
 
 namespace scopes {
 

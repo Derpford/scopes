@@ -21,6 +21,8 @@
 #include "timer.hpp"
 #include "compiler_flags.hpp"
 #include "ordered_map.hpp"
+#include "string.hpp"
+#include "boot.hpp"
 
 #include "scopes/scopes.h"
 
@@ -48,8 +50,7 @@ static const Anchor *anchor_from_location(clang::SourceManager &SM, clang::Sourc
 
     if (PLoc.isValid()) {
         auto fname = PLoc.getFilename();
-        const String *strpath = String::from_cstr(fname);
-        Symbol key(strpath);
+        Symbol key(fname);
         return Anchor::from(key, PLoc.getLine(), PLoc.getColumn(),
             SM.getFileOffset(loc));
     }
@@ -96,7 +97,7 @@ public:
     void SetContext(clang::ASTContext * ctx, CNamespaces *_dest) {
         Context = ctx;
         dest = _dest;
-        const Type *T = plain_typename_type(String::from("__builtin_va_list"), nullptr,
+        const Type *T = plain_typename_type("__builtin_va_list", nullptr,
             array_type(TYPE_I8, sizeof(va_list)).assert_ok()).assert_ok();
         dest->typedefs.insert(Symbol("__builtin_va_list"), ConstPointer::type_from(T));
     }
@@ -140,7 +141,7 @@ public:
             //unsigned width = it->getBitWidthValue(*Context);
 
             Symbol name = it->isAnonymousStructOrUnion() ?
-                SYM_Unnamed : Symbol(String::from_stdstring(declname.getAsString()));
+                SYM_Unnamed : Symbol(declname.getAsString());
 
             if (!is_union) {
                 //ss << "type " << ST << " field " << name << " : " << fieldtype << std::endl;
@@ -230,14 +231,11 @@ public:
                 return (const Type *)map.values[it]->value;
             }
         }
-        const String *type_title;
+        std::string type_title;
         if (typedefname != SYM_Unnamed) {
             type_title = typedefname.name();
         } else {
-            type_title = String::join(String::from("<"),
-                String::join(
-                    String::join(prefix.name(), String::from(" ")),
-                    String::join(name.name(), String::from(">"))));
+            type_title = "<" + prefix.name() + " " + name.name() + ">";
         }
         const Type *T = incomplete_typename_type(type_title, supertype);
         if (name != SYM_Unnamed) {
@@ -262,10 +260,10 @@ public:
         if (is_anon) {
             auto tdn = rd->getTypedefNameForAnonDecl();
             if (tdn) {
-                name = Symbol(String::from_stdstring(tdn->getName().data()));
+                name = Symbol(tdn->getName().data());
             }
         } else {
-            name = Symbol(String::from_stdstring(rd->getName().data()));
+            name = Symbol(rd->getName().data());
         }
 
         const Type *struct_type = nullptr;
@@ -322,12 +320,12 @@ public:
                 return it->second;
         }
 
-        Symbol name(String::from_stdstring(ed->getName()));
+        Symbol name(ed->getName());
         Symbol typedefname = SYM_Unnamed;
         if (name == SYM_Unnamed) {
             auto tdn = ed->getTypedefNameForAnonDecl();
             if (tdn) {
-                typedefname = Symbol(String::from_stdstring(tdn->getName().data()));
+                typedefname = Symbol(tdn->getName().data());
             }
         }
 
@@ -345,7 +343,7 @@ public:
                 const Anchor *anchor = anchorFromLocation(it->getSourceRange().getBegin());
                 auto &val = it->getInitVal();
 
-                auto name = Symbol(String::from_stdstring(it->getName().data()));
+                auto name = Symbol(it->getName().data());
                 auto value = ref(anchor,
                     ConstInt::from(enum_type, val.getExtValue()));
 
@@ -492,7 +490,7 @@ public:
             const TypedefType *tt = cast<TypedefType>(Ty);
             TypedefNameDecl * td = tt->getDecl();
             int it = dest->typedefs.find_index(
-                Symbol(String::from_stdstring(td->getName().data())));
+                Symbol(td->getName().data()));
             if (it == -1) {
                 return empty_arguments_type();
             }
@@ -621,7 +619,7 @@ public:
         if (!result.ok()) {
             StyledString ss;
             ss.out << T.getAsString().c_str() << " (" << Ty->getTypeClassName() << ")";
-            auto val = ConstPointer::string_from(ss.str());
+            auto val = GlobalString::from_stdstring(ss.str());
             SCOPES_TRACE_CONVERT_FOREIGN_TYPE(val);
             result.assert_error()->trace(_backtrace);
         }
@@ -692,7 +690,7 @@ public:
             SCOPES_COMBINE_RESULT(ok, type);
             if (!ok.ok()) return false;
             exportExternRef(
-                String::from_stdstring(vd->getName().data()),
+                std::string(vd->getName().data()),
                 type.assert_ok(),
                 anchor);
         }
@@ -712,7 +710,7 @@ public:
         if (!ok.ok()) return false;
         const Type *type = type_result.assert_ok();
 
-        Symbol name = Symbol(String::from_stdstring(td->getName().data()));
+        Symbol name = Symbol(td->getName().data());
         const Anchor *anchor = anchorFromLocation(td->getSourceRange().getBegin());
 
         exportType(name, type, anchor);
@@ -764,7 +762,7 @@ public:
         }
         const Anchor *anchor = anchorFromLocation(f->getSourceRange().getBegin());
 
-        exportExtern(Symbol(String::from_stdstring(FuncName)),
+        exportExtern(Symbol(FuncName),
             functype, anchor);
 
         return true;
@@ -853,8 +851,8 @@ static void add_c_macro(clang::Preprocessor & PP,
 
     if ((numtokens == 1) && Tok->is(clang::tok::identifier)) {
         // aliases need to be resolved once the whole namespace is known
-        const String *name = String::from_cstr(II->getName().str().c_str());
-        const String *value = String::from_cstr(Tok->getIdentifierInfo()->getName().str().c_str());
+        std::string name = II->getName().str();
+        std::string value = Tok->getIdentifierInfo()->getName().str();
         aliases.push_back({ Symbol(name), Symbol(value) });
         return;
     }
@@ -862,13 +860,11 @@ static void add_c_macro(clang::Preprocessor & PP,
     if ((numtokens == 1) && Tok->is(clang::tok::string_literal)) {
         clang::Token tokens[] = { *Tok };
         clang::StringLiteralParser Literal(tokens, PP, false);
-        const String *name = String::from_cstr(II->getName().str().c_str());
-        std::string svalue = Literal.GetString();
-        const String *value = String::from(svalue.c_str(), svalue.size());
+        std::string name = II->getName().str();
+        std::string value = Literal.GetString();
         const Anchor *anchor = anchor_from_location(PP.getSourceManager(),
             MI->getDefinitionLoc());
-
-        map.insert(name, ref(anchor, ConstPointer::string_from(value)));
+        map.insert(name, ref(anchor, GlobalString::from_stdstring(value)));
         return;
     }
 
@@ -881,7 +877,7 @@ static void add_c_macro(clang::Preprocessor & PP,
     clang::NumericLiteralParser Literal(Spelling, Tok->getLocation(), PP);
     if(Literal.hadError)
         return;
-    const String *name = String::from_cstr(II->getName().str().c_str());
+    std::string name = II->getName().str();
     std::string suffix;
     if (Literal.hasUDSuffix()) {
         suffix = Literal.getUDSuffix();
@@ -942,17 +938,17 @@ static void build_namespace_symbols (const Scope *scope, Symbol symbol, T&map) {
 
 template<typename T>
 static void merge_namespace_symbols (const Scope *&scope, Symbol symbol, const T&map) {
-    const Scope *sub = Scope::from(nullptr, nullptr);
+    const Scope *sub = Scope::from(GlobalStringRef(), nullptr);
     for (int i = 0; i < map.keys.size(); ++i) {
         auto &&symbol = map.keys[i];
         auto &&value = map.values[i];
         sub = Scope::bind_from(
             ref(value.anchor(), ConstInt::symbol_from(symbol)),
-            value, nullptr, sub);
+            value, GlobalStringRef(), sub);
     }
     sub->table();
     scope = Scope::bind_from(ConstInt::symbol_from(symbol),
-        ConstPointer::scope_from(sub), nullptr, scope);
+        ConstPointer::scope_from(sub), GlobalStringRef(), scope);
 }
 
 template<typename T>
@@ -986,9 +982,9 @@ SCOPES_RESULT(const Scope *) import_c_module (
     aargs.push_back("clang");
     aargs.push_back(path.c_str());
     aargs.push_back("-I");
-    aargs.push_back(scopes_clang_include_dir);
+    aargs.push_back(clang_include_dir.c_str());
     aargs.push_back("-I");
-    aargs.push_back(scopes_include_dir);
+    aargs.push_back(include_dir.c_str());
     aargs.push_back("-fno-common");
     auto argcount = args.size();
     std::string object_file;
@@ -1086,7 +1082,7 @@ SCOPES_RESULT(const Scope *) import_c_module (
         }
         SCOPES_CHECK_RESULT(add_module(M, PointerMap(), CF_Cache));
 
-        const Scope *result = Scope::from(nullptr, nullptr);
+        const Scope *result = Scope::from(GlobalStringRef(), nullptr);
         merge_namespace_symbols(result, SYM_Struct, ns.structs);
         merge_namespace_symbols(result, SYM_Union, ns.unions);
         merge_namespace_symbols(result, SYM_Enum, ns.enums);

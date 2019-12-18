@@ -27,6 +27,7 @@
 #include "qualifier.inc"
 #include "symbol_enum.inc"
 #include "lifetime.hpp"
+#include "string.hpp"
 
 #include <algorithm>
 #include <unordered_set>
@@ -296,39 +297,35 @@ SCOPES_RESULT(void) ASTContext::append(const InstructionRef &value) const {
     return {};
 }
 
-SCOPES_RESULT(void) ASTContext::unchecked_append(const InstructionRef &value) const {
+void ASTContext::unchecked_append(const InstructionRef &value) const {
     //SCOPES_RESULT_TYPE(void);
     assert(block);
     block->append(value);
     //SCOPES_CHECK_RESULT(tag_instruction(*this, value));
-    return {};
 }
 
 ASTContext ASTContext::from_function(const FunctionRef &fn) {
     return ASTContext(fn, fn, LoopLabelRef(), LabelRef(), LabelRef(), nullptr);
 }
 
-SCOPES_RESULT(InstructionRef) ASTContext::build_deref(const Anchor *anchor,
+InstructionRef ASTContext::build_deref(const Anchor *anchor,
     const TypedValueRef &value) const {
-    SCOPES_RESULT_TYPE(InstructionRef);
     auto op = ref(anchor, RefToPtr::from(value));
-    SCOPES_CHECK_RESULT(unchecked_append(op));
+    unchecked_append(op);
     return InstructionRef(anchor, Load::from(op));
 }
 
-SCOPES_RESULT(InstructionRef) ASTContext::build_assign(const Anchor *anchor,
+InstructionRef ASTContext::build_assign(const Anchor *anchor,
     const TypedValueRef &value, const TypedValueRef &target) const {
-    SCOPES_RESULT_TYPE(InstructionRef);
     auto op = ref(anchor, RefToPtr::from(target));
-    SCOPES_CHECK_RESULT(unchecked_append(op));
+    unchecked_append(op);
     return InstructionRef(anchor, Store::from(value, op));
 }
 
-SCOPES_RESULT(InstructionRef) ASTContext::build_getelementref(const Anchor *anchor,
+InstructionRef ASTContext::build_getelementref(const Anchor *anchor,
     const TypedValueRef &value, const TypedValues &indices) const {
-    SCOPES_RESULT_TYPE(InstructionRef);
     auto op = ref(anchor, RefToPtr::from(value));
-    SCOPES_CHECK_RESULT(unchecked_append(op));
+    unchecked_append(op);
     TypedValues idxs;
     idxs.reserve(indices.size() + 1);
     idxs.push_back(ConstInt::from(TYPE_I32, 0));
@@ -336,7 +333,7 @@ SCOPES_RESULT(InstructionRef) ASTContext::build_getelementref(const Anchor *anch
         idxs.push_back(val);
     }
     auto op2 = ref(anchor, GetElementPtr::from(op, idxs));
-    SCOPES_CHECK_RESULT(unchecked_append(op2));
+    unchecked_append(op2);
     return InstructionRef(anchor, PtrToRef::from(op2));
 }
 
@@ -428,9 +425,9 @@ void map_arguments_to_block(const ASTContext &ctx, const TypedValueRef &src) {
 }
 
 static void write_annotation(const ASTContext &ctx,
-    const Anchor *anchor, const String *msg, Values values) {
+    const Anchor *anchor, const std::string &msg, Values values) {
     values.insert(values.begin(),
-        ref(anchor, ConstPointer::string_from(msg)));
+        ref(anchor, GlobalString::from_stdstring(msg)));
     auto expr = ref(anchor,
             CallTemplate::from(
                 ref(anchor, ConstInt::builtin_from(Builtin(FN_Annotate))),
@@ -1262,11 +1259,8 @@ const Type *try_get_const_type(const ValueRef &node) {
     return TYPE_Unknown;
 }
 
-const String *try_extract_string(const ValueRef &node) {
-    auto ptr = node.dyn_cast<ConstPointer>();
-    if (ptr && (ptr->get_type() == TYPE_String))
-        return (const String *)ptr->value;
-    return nullptr;
+GlobalStringRef try_extract_string(const ValueRef &node) {
+    return node.dyn_cast<GlobalString>();
 }
 
 static SCOPES_RESULT(TypedValueRef) prove_MergeTemplate(const ASTContext &ctx, const MergeTemplateRef &node) {
@@ -1322,7 +1316,7 @@ static SCOPES_RESULT(TypedValueRef) prove_CompileStage(const ASTContext &ctx, co
         auto value = SCOPES_GET_RESULT(prove(ctx, untyped_value));
 
         if (is_value_stage_constant(value)) {
-            if (sc_string_count(keydocstr))
+            if (sc_globalstring_count(keydocstr))
                 newscope = sc_scope_bind_with_docstring(newscope, key, value, keydocstr);
             else
                 newscope = sc_scope_bind(newscope, key, value);
@@ -1349,11 +1343,11 @@ static SCOPES_RESULT(TypedValueRef) prove_CompileStage(const ASTContext &ctx, co
             int argc = sc_argcount(value);
             auto vkey = ref(anchor, Quote::from(key));
             if (argc == 1) {
-                if (sc_string_count(keydocstr)) {
+                if (sc_globalstring_count(keydocstr)) {
                     tmp = ref(anchor,
                         CallTemplate::from(g_sc_scope_bind_with_docstring, { tmp,  vkey,
                             ref(value_anchor, Quote::from(value)),
-                            ref(anchor, ConstPointer::string_from(keydocstr))
+                            ConstAggregate::ast_from(keydocstr)
                         }));
                 } else {
                     tmp = ref(anchor,
@@ -1376,10 +1370,10 @@ static SCOPES_RESULT(TypedValueRef) prove_CompileStage(const ASTContext &ctx, co
                     }
                 }
                 auto outargs = build_quoted_argument_list(anchor, newvalues);
-                if (sc_string_count(keydocstr)) {
+                if (sc_globalstring_count(keydocstr)) {
                     tmp = ref(anchor,
                         CallTemplate::from(g_sc_scope_bind_with_docstring, { tmp, vkey, outargs,
-                            ref(anchor, ConstPointer::string_from(keydocstr)) }));
+                            ConstAggregate::ast_from(keydocstr) }));
                 } else {
                     tmp = ref(anchor,
                         CallTemplate::from(g_sc_scope_bind, { tmp, vkey, outargs }));
@@ -1445,7 +1439,11 @@ static SCOPES_RESULT(TValueRef<T>) extract_typed_constant(const Type *want, Valu
     }
     auto constval = value.dyn_cast<T>();
     if (!constval) {
-        SCOPES_ERROR(TypedConstantValueKindMismatch, want, value->kind());
+        const Type *VT = TYPE_Unknown;
+        if (value.isa<TypedValue>()) {
+            VT = value.cast<TypedValue>()->get_type();
+        }
+        SCOPES_ERROR(TypedConstantValueKindMismatch, want, value->kind(), VT);
     }
     if (!TT) {
         TT = constval->get_type();
@@ -1498,10 +1496,13 @@ SCOPES_RESULT(const List *) extract_list_constant(const ValueRef &value) {
     return (const List *)x->value;
 }
 
-SCOPES_RESULT(const String *) extract_string_constant(const ValueRef &value) {
-    SCOPES_RESULT_TYPE(const String *);
-    ConstPointerRef x = SCOPES_GET_RESULT(extract_typed_constant<ConstPointer>(TYPE_String, value));
-    return (const String *)x->value;
+SCOPES_RESULT(GlobalStringRef) extract_string_constant(const ValueRef &value) {
+    SCOPES_RESULT_TYPE(GlobalStringRef);
+    auto constval = value.dyn_cast<GlobalString>();
+    if (!constval) {
+        SCOPES_ERROR(ConstantValueKindMismatch, VK_GlobalString, value->kind());
+    }
+    return constval;
 }
 
 SCOPES_RESULT(Builtin) extract_builtin_constant(const ValueRef &value) {
@@ -1654,7 +1655,7 @@ static SCOPES_RESULT(void) build_deref(
         SCOPES_CHECK_RESULT(verify_readable(rq, T));
         auto retT = strip_qualifier<ReferQualifier>(T);
         retT = view_result_type(ctx, retT, val);
-        auto call = SCOPES_GET_RESULT(ctx.build_deref(anchor, val));
+        auto call = ctx.build_deref(anchor, val);
         call->hack_change_value(retT);
         SCOPES_CHECK_RESULT(ctx.append(call));
         val = call;
@@ -1678,7 +1679,7 @@ static SCOPES_RESULT(void) build_deref_move(
     if (rq) {
         SCOPES_CHECK_RESULT(verify_readable(rq, T));
         auto retT = strip_qualifier<ReferQualifier>(T);
-        auto call = SCOPES_GET_RESULT(ctx.build_deref(anchor, val));
+        auto call = ctx.build_deref(anchor, val);
         call->hack_change_value(unique_result_type(ctx, retT));
         SCOPES_CHECK_RESULT(ctx.append(call));
         auto uq = try_unique(T);
@@ -1707,7 +1708,7 @@ static SCOPES_RESULT(void) build_deref_automove(
         } else {
             rtype = retT;
         }
-        auto call = SCOPES_GET_RESULT(ctx.build_deref(anchor, val));
+        auto call = ctx.build_deref(anchor, val);
         call->hack_change_value(rtype);
         SCOPES_CHECK_RESULT(ctx.append(call));
         auto uq = try_unique(T);
@@ -2616,7 +2617,7 @@ repeat:
             auto rq = try_qualifier<ReferQualifier>(typeof_T);
             if (rq) {
                 auto op = TypedValueRef(call.anchor(),
-                    SCOPES_GET_RESULT(ctx.build_getelementref(call.anchor(), _T, { _idx })));
+                    ctx.build_getelementref(call.anchor(), _T, { _idx }));
                 const Type *retT = view_result_type(ctx,
                     qualify(op->get_type(), { rq }), _T, _idx);
                 op->hack_change_value(retT);
@@ -2726,7 +2727,7 @@ repeat:
             auto rq = try_qualifier<ReferQualifier>(typeof_T);
             if (rq) {
                 auto op = TypedValueRef(call.anchor(),
-                    SCOPES_GET_RESULT(ctx.build_getelementref(call.anchor(), _T, { _idx })));
+                    ctx.build_getelementref(call.anchor(), _T, { _idx }));
                 auto retT = view_result_type(ctx, qualify(op->get_type(), { rq }), _T);
                 op->hack_change_value(retT);
                 return op;
@@ -2827,7 +2828,7 @@ repeat:
             TypedValueRef op;
             if (is_ref) {
                 assert(Tptr);
-                op = SCOPES_GET_RESULT(ctx.build_getelementref(call.anchor(), dep, indices));
+                op = ctx.build_getelementref(call.anchor(), dep, indices);
             } else {
                 op = GetElementPtr::from(dep, indices);
             }
@@ -2864,7 +2865,7 @@ repeat:
                 }
                 ctx.move(uq->id, call);
             }
-            return TypedValueRef(SCOPES_GET_RESULT(ctx.build_assign(call.anchor(), _ElemT, _DestT)));
+            return TypedValueRef(ctx.build_assign(call.anchor(), _ElemT, _DestT));
         } break;
         case FN_PtrToRef: {
             CHECKARGS(1, 1);
@@ -3204,6 +3205,15 @@ repeat:
         SCOPES_TRACE_PROVE_ARG(values[i]);
         const Type *Ta = values[i]->get_type();
         const Type *Tb = ft->argument_types[i];
+        if ((Tb == TYPE_ValueRef) && (Ta == TYPE_GlobalStringRef)) {
+            // auto upcast
+            auto wrapcall = ref(values[i].anchor(),
+                Call::from(TYPE_ValueRef, g_sc_globalstring_value,
+                    { values[i] }));
+            ctx.unchecked_append(wrapcall);
+            values[i] = wrapcall;
+            Ta = values[i]->get_type();
+        }
         if (is_reference(Ta) && !is_reference(Tb)) {
             SCOPES_CHECK_RESULT(build_deref(ctx, call.anchor(), values[i]));
             Ta = values[i]->get_type();
@@ -3299,22 +3309,32 @@ repeat:
     //       to use the anchor of the calling expression
     //
     //       this could also be performed by wrapper macros inside the language
-    if (rt == TYPE_ValueRef) {
+    if ((rt == TYPE_ValueRef)||(rt == TYPE_GlobalStringRef)) {
         if (callee.isa<Global>()) {
             auto g = callee.cast<Global>();
-            const char *name = g->name.name()->data;
-            auto sz = g->name.name()->count;
+            auto &&s = g->name.name();
+            const char *name = s.c_str();
+            auto sz = s.size();
             if (sz >= 7) {
                 if (name[0] == 's' && name[1] == 'c' && name[2] == '_'
                     && name[sz-4] == '_' && name[sz-3] == 'n' && name[sz-2] == 'e' && name[sz-1] == 'w') {
                     SCOPES_CHECK_RESULT(ctx.append(newcall));
                     auto anchor = call.anchor();
-                    // convert to valueref
-                    newcall = ref(anchor, Call::from(TYPE_ValueRef,
-                        g_sc_valueref_tag, {
-                        ref(anchor, ConstPointer::anchor_from(anchor)),
-                        newcall
-                    }));
+                    if (rt == TYPE_GlobalStringRef) {
+                        // convert to valueref
+                        newcall = ref(anchor, Call::from(TYPE_GlobalStringRef,
+                            g_sc_globalstring_tag, {
+                            ref(anchor, ConstPointer::anchor_from(anchor)),
+                            newcall
+                        }));
+                    } else {
+                        // convert to valueref
+                        newcall = ref(anchor, Call::from(TYPE_ValueRef,
+                            g_sc_valueref_tag, {
+                            ref(anchor, ConstPointer::anchor_from(anchor)),
+                            newcall
+                        }));
+                    }
                 }
             }
         }

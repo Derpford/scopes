@@ -7,6 +7,8 @@
 #include "anchor.hpp"
 #include "source_file.hpp"
 #include "hash.hpp"
+#include "string.hpp"
+#include "value.hpp"
 
 #include <unordered_set>
 
@@ -19,7 +21,7 @@ struct Hash {
         h = hash2(h, std::hash<int>{}(s->lineno));
         h = hash2(h, std::hash<int>{}(s->column));
         h = hash2(h, std::hash<int>{}(s->offset));
-        h = hash2(h, std::hash<const String *>{}(s->buffer));
+        h = hash2(h, std::hash<const GlobalString *>{}(s->buffer));
         return h;
     }
 };
@@ -54,7 +56,7 @@ const Anchor *unknown_anchor() {
 // ANCHOR
 //------------------------------------------------------------------------------
 
-Anchor::Anchor(Symbol _path, int _lineno, int _column, int _offset, const String *_buffer) :
+Anchor::Anchor(Symbol _path, int _lineno, int _column, int _offset, const GlobalString *_buffer) :
     path(_path),
     lineno(_lineno),
     column(_column),
@@ -74,7 +76,7 @@ bool Anchor::is_same(const Anchor *other) const {
 }
 
 const Anchor *Anchor::from(
-    Symbol _path, int _lineno, int _column, int _offset, const String *_buffer) {
+    Symbol _path, int _lineno, int _column, int _offset, const GlobalString *_buffer) {
     Anchor key(_path, _lineno, _column, _offset, _buffer);
     auto it = anchors.find(&key);
     if (it != anchors.end())
@@ -96,14 +98,14 @@ const Anchor *Anchor::from(
 StyledStream& Anchor::stream(StyledStream& ost) const {
     ost << Style_Location;
     auto ss = StyledStream::plain(ost);
-    ss << path.name()->data << ":" << lineno << ":" << column << ":";
+    ss << path.name() << ":" << lineno << ":" << column << ":";
     ost << Style_None;
     return ost;
 }
 
 StyledStream &Anchor::stream_source_line(StyledStream &ost, const char *indent) const {
     if (buffer) {
-        SourceFile::stream_buffer(ost, offset, buffer->data, buffer->count);
+        SourceFile::stream_buffer(ost, offset, buffer->value.data(), buffer->value.size());
     } else {
         auto file = SourceFile::from_file(path);
         if (file) {

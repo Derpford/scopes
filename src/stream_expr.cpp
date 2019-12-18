@@ -14,6 +14,9 @@
 #include "symbol_enum.hpp"
 #include "dyn_cast.inc"
 #include "symbol_enum.inc"
+#include "string.hpp"
+#include "qualifier/refer_qualifier.hpp"
+#include "qualifier.inc"
 
 #include <unordered_map>
 
@@ -137,7 +140,7 @@ IDMap ids;
 Set visited;
 
 static Symbol remap_unnamed(Symbol sym) {
-    return (sym == SYM_Unnamed)?Symbol(String::from("#unnamed")):sym;
+    return (sym == SYM_Unnamed)?Symbol("#unnamed"):sym;
 }
 
 #define LIST(...) ValueRef(_anchor, ConstPointer::list_from(List::from_arglist( __VA_ARGS__ )))
@@ -213,7 +216,7 @@ HANDLER(Label) {
     l = List::from(TYPE(node->get_type()), l);
     l = List::from(SYMBOL(OP_Colon), l);
     l = List::from(SYMBOL(node->name), l);
-    auto key = Symbol(String::from_cstr(get_label_kind_name(node->label_kind)));
+    auto key = Symbol(get_label_kind_name(node->label_kind));
     l = List::from(SYMBOL(key), l);
 
     return ConstPointer::list_from(l);
@@ -665,8 +668,9 @@ void walk(const Anchor *anchor, const List *l, int depth, int maxdepth, bool nak
             it = it->next;
             while (it) {
                 ss << " ";
-                if (try_get_const_type(it->at) == TYPE_String) {
-                    ss << ((const String *)it->at.cast<ConstPointer>()->value)->data;
+                auto str = try_extract_string(it->at);
+                if (str) {
+                    ss << str->value;
                 } else {
                     walk(it->at, depth, maxdepth, false, true);
                 }
@@ -773,7 +777,7 @@ void walk(const ValueRef &e, int depth, int maxdepth, bool naked, bool types) {
             ss << "#unnamed";
         } else {
             ss << fmt.symbol_styler(sym);
-            sym.name()->stream(ss, SYMBOL_ESCAPE_CHARS);
+            stream_escaped(ss, sym.name(), SYMBOL_ESCAPE_CHARS);
             ss << Style_None;
         }
     } else {
@@ -815,14 +819,18 @@ void walk(const ValueRef &e, int depth, int maxdepth, bool naked, bool types) {
             auto T = val->get_type();
             if (T == TYPE_Type) {
                 ss << (const Type *)val->value;
-            } else if (T == TYPE_String) {
-                ss << (const String *)val->value;
             } else if (T == TYPE_Anchor) {
                 ss << (const Anchor *)val->value;
             } else {
                 ss << "$";
                 stream_address(ss, val->value);
             }
+        } break;
+        case VK_GlobalString: {
+            auto val = e.cast<GlobalString>();
+            ss << Style_String << "\"";
+            stream_escaped(ss, val->value, STRING_ESCAPE_CHARS);
+            ss << "\"" << Style_None;
         } break;
         case VK_ConstAggregate: {
             auto val = e.cast<ConstAggregate>();
@@ -894,6 +902,14 @@ void stream_value(StyledStream &_ss, const ValueRef &value, const StreamValueFor
 //------------------------------------------------------------------------------
 
 bool is_default_suffix(const Type *T) {
+    if (is_reference(T)) {
+        auto RT = strip_qualifier<ReferQualifier>(T);
+        if (RT->kind() == TK_Array) {
+            auto at = cast<ArrayType>(RT);
+            if (at->element_type == TYPE_I8)
+                return true;
+        }
+    }
     switch (T->kind()) {
     case TK_Vector:
     case TK_Array:
@@ -908,7 +924,6 @@ bool is_default_suffix(const Type *T) {
     if (T == TYPE_List) return true;
     if (T == TYPE_Symbol) return true;
     if (T == TYPE_Type) return true;
-    if (T == TYPE_String) return true;
     if (T == TYPE_Nothing) return true;
     return false;
 }

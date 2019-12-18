@@ -13,9 +13,9 @@
 #-------------------------------------------------------------------------------
 
 fn... read-eval-print-loop
-case (global-scope, show-logo : bool = false, history-path : string = "")
+case (global-scope, show-logo : bool = false, history-path : GlobalString = `"")
     fn repeat-string (n c)
-        loop (i s = 0:usize "")
+        loop (i s = 0:usize `"")
             if (i == n)
                 return s
             repeat (i + 1:usize)
@@ -28,8 +28,8 @@ case (global-scope, show-logo : bool = false, history-path : string = "")
                 return s
             let c = (@ s i)
             if (c != 32:i8)
-                let s = (sc_string_buffer s)
-                return (sc_string_new s i)
+                let s = (sc_globalstring_buffer s)
+                return (sc_globalstring_new s i)
             repeat (i + 1:usize)
 
     fn blank? (s)
@@ -68,14 +68,14 @@ case (global-scope, show-logo : bool = false, history-path : string = "")
             else
                 sc_write (repr 'fn)
             sc_write " "
-            sc_write (value as string)
+            sc_write (value as GlobalString)
             sc_write " ("
             let count = (sc_template_parameter_count tmpl)
             for i in (range count)
                 if (i != 0)
                     sc_write " "
                 let param = (sc_template_parameter tmpl i)
-                sc_write ((sc_parameter_name param) as string)
+                sc_write ((sc_parameter_name param) as GlobalString)
             sc_write ")\n\n"
             if (not (empty? docstr))
                 sc_write docstr
@@ -92,12 +92,12 @@ case (global-scope, show-logo : bool = false, history-path : string = "")
         let block = (sc_expression_new)
         let str = `""
         sc_expression_append block str
-        fold (str = str) for elem in values...
+        fold (str = (str as Value)) for elem in values...
             let str =
-                if (('typeof elem) == string)
+                if ('globalstring? elem)
                     `(.. str elem " ")
                 elseif (('typeof elem) == Symbol)
-                    `(.. str [(elem as Symbol as string)] " ")
+                    `(.. str [(elem as Symbol as GlobalString)] " ")
                 else
                     `(.. str (tostring elem) " ")
             sc_expression_append block str
@@ -118,7 +118,7 @@ case (global-scope, show-logo : bool = false, history-path : string = "")
                 typedef (do "Enter 'exit;' or Ctrl+D to exit")
                     inline __typecall () (if true (exit 0))
 
-    loop (preload cmdlist counter eval-scope = "" "" 0 eval-scope)
+    loop (preload cmdlist counter eval-scope = `"" `"" 0 eval-scope)
         set-autocomplete-scope! eval-scope
 
         fn make-idstr (counter)
@@ -157,7 +157,7 @@ case (global-scope, show-logo : bool = false, history-path : string = "")
                 else cmd
                 "\n"
         let preload =
-            if terminated? ""
+            if terminated? `""
             else (leading-spaces cmd)
         if (not terminated?)
             repeat preload cmdlist counter eval-scope
@@ -313,7 +313,7 @@ case (global-scope, show-logo : bool = false, history-path : string = "")
             except (exc)
                 'dump exc
                 _ counter eval-scope
-        repeat "" "" counter eval-scope
+        repeat `"" `"" counter eval-scope
 
 if main-module?
     read-eval-print-loop (globals) true

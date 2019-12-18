@@ -12,6 +12,7 @@
 #include "../error.hpp"
 #include "../dyn_cast.inc"
 #include "../hash.hpp"
+#include "../styled_stream.hpp"
 
 #include "../qualifier/unique_qualifiers.hpp"
 #include "../qualifier.inc"

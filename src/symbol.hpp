@@ -8,10 +8,10 @@
 #define SCOPES_SYMBOL_HPP
 
 #include "symbol_enum.hpp"
-#include "string.hpp"
 
 #include <cstddef>
 #include <vector>
+#include <string>
 
 namespace scopes {
 
@@ -35,15 +35,15 @@ struct Symbol {
     };
 
 protected:
-    static void verify_unmapped(Symbol id, const String *name);
+    static void verify_unmapped(Symbol id, const std::string &name);
 
-    static void map_symbol(Symbol id, const String *name);
+    static void map_symbol(Symbol id, const std::string &name);
 
-    static void map_known_symbol(Symbol id, const String *name);
+    static void map_known_symbol(Symbol id, const std::string &name);
 
-    static Symbol get_symbol(const String *name);
+    static Symbol get_symbol(const std::string &name);
 
-    static const String *get_symbol_name(Symbol id);
+    static const std::string &get_symbol_name(Symbol id);
 
     uint64_t _value;
 
@@ -58,10 +58,10 @@ public:
 
     template<unsigned N>
     Symbol(const char (&str)[N]) :
-        _value(get_symbol(String::from(str))._value) {
+        _value(get_symbol(str)._value) {
     }
 
-    Symbol(const String *str);
+    Symbol(const std::string &str);
 
     bool is_known() const;
     EnumT known_value() const;
@@ -76,7 +76,7 @@ public:
     std::size_t hash() const;
     uint64_t value() const;
 
-    const String *name() const;
+    const std::string &name() const;
 
     static void _init_symbols();
     static size_t symbol_count();

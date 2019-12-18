@@ -18,6 +18,7 @@
 #include "prover.hpp"
 #include "timer.hpp"
 #include "stream_expr.hpp"
+#include "string.hpp"
 #include "gc.hpp"
 #include "dyn_cast.inc"
 #include "scopes/scopes.h"
@@ -63,7 +64,7 @@ static Symbol try_extract_symbol(const ValueRef &node) {
 
 struct Expander {
     const Scope *env;
-    const String *next_doc;
+    GlobalStringRef next_doc;
     TemplateRef astscope;
     const List *next;
     static bool verbose;
@@ -72,7 +73,6 @@ struct Expander {
 
     Expander(const Scope *_env, const TemplateRef &_astscope, const List *_next = EOL) :
         env(_env),
-        next_doc(nullptr),
         astscope(_astscope),
         next(_next) {
         if (!list_expander_func_type) {
@@ -91,7 +91,7 @@ struct Expander {
         while (it) {
             next = it->next;
             if (!last_expression()) {
-                const String *doc = try_extract_string(it->at);
+                GlobalStringRef doc = try_extract_string(it->at);
                 if (doc) {
                     next_doc = doc;
                 }
@@ -124,15 +124,15 @@ struct Expander {
         return ValueRef(node);
     }
 
-    void bind(const ConstRef &name, const ValueRef &value, const String *doc) {
+    void bind(const ConstRef &name, const ValueRef &value, const GlobalStringRef &doc) {
         env = Scope::bind_from(name, value, doc, env);
     }
 
     void bind(const ConstRef &name, const ValueRef &value) {
-        const String *doc = nullptr;
+        GlobalStringRef doc;
         if (next_doc) {
             doc = next_doc;
-            next_doc = nullptr;
+            next_doc = GlobalStringRef();
         }
         bind(name, value, doc);
     }
@@ -201,17 +201,24 @@ struct Expander {
                 bind_name = sym;
             }
             it = it->next;
-        } else if (T == TYPE_String) {
-            auto str = try_extract_string(it->at);
-            assert(str);
-            // named lambda
-            func = ref(anchor, Template::from(Symbol(str)));
-            result = func;
-            it = it->next;
         } else {
-            // unnamed lambda
-            func = ref(anchor, Template::from(Symbol(SYM_Unnamed)));
-            result = func;
+            auto str = try_extract_string(it->at);
+            if (str) {
+                // named lambda
+                func = ref(anchor, Template::from(Symbol(str->value)));
+                result = func;
+                it = it->next;
+            } else {
+                auto f = it->at.dyn_cast<TypedValue>();
+                if (f->get_type() == TYPE_GlobalStringRef) {
+                    StyledStream ss;
+                    ss << it->at << std::endl;
+                    assert(false && "oops");
+                }
+                // unnamed lambda
+                func = ref(anchor, Template::from(Symbol(SYM_Unnamed)));
+                result = func;
+            }
         }
         if (setup.inlined)
             func->set_inline();
@@ -234,11 +241,11 @@ struct Expander {
 
         it = it->next;
 
-        const Scope *subenv = Scope::from(nullptr, env);
+        const Scope *subenv = Scope::from(env);
         if (!func->is_hidden()) {
-            subenv = Scope::bind_from(ConstInt::symbol_from(KW_Recur), func, nullptr, subenv);
+            subenv = Scope::bind_from(ConstInt::symbol_from(KW_Recur), func, GlobalStringRef(), subenv);
             // ensure the local scope does not contain special symbols
-            subenv = Scope::from(nullptr, subenv);
+            subenv = Scope::from(subenv);
         }
 
         Expander subexpr(subenv, func);
@@ -277,7 +284,7 @@ struct Expander {
         auto anchor = it->at.anchor();
         it = it->next;
 
-        const Scope *subenv = Scope::from(nullptr, env);
+        const Scope *subenv = Scope::from(env);
         auto label = ref(anchor, LabelTemplate::from(LK_User, name));
         Expander subexpr(subenv, astscope);
         subexpr.bind(ConstInt::symbol_from(name), label);
@@ -292,7 +299,7 @@ struct Expander {
         auto anchor = it->at.anchor();
         it = it->next;
 
-        const Scope *subenv = Scope::from(nullptr, env);
+        const Scope *subenv = Scope::from(env);
         Expander subexpr(subenv, astscope);
         return subexpr.expand_expression(ref(anchor, it), true);
     }
@@ -369,7 +376,7 @@ struct Expander {
         LabelTemplateRef break_label = ref(anchor,
             LabelTemplate::from(LK_Break, KW_Break, loop));
 
-        Expander bodyexp(Scope::from(nullptr, env), astscope);
+        Expander bodyexp(Scope::from(env), astscope);
 
         auto expr = Expression::unscoped_from();
         {
@@ -498,7 +505,7 @@ struct Expander {
                         }
                     }
                     auto _name = ConstInt::symbol_from(name);
-                    ValueRef value; const String *doc;
+                    ValueRef value; GlobalStringRef doc;
                     if (!env->lookup(_name, value, doc)) {
                         SCOPES_ERROR(SyntaxUndeclaredIdentifier, name, env);
                     }
@@ -626,7 +633,7 @@ struct Expander {
         //ValueRef src = it->at;
         it = it->next;
 
-        Expander subexp(Scope::from(nullptr, env), astscope);
+        Expander subexp(Scope::from(env), astscope);
 
         ValueRef try_value = SCOPES_GET_RESULT(subexp.expand_expression(
             ref(try_anchor, it), false));
@@ -648,7 +655,7 @@ struct Expander {
                     const List *params = SCOPES_GET_RESULT(extract_list_constant(it->at));
                     const List *body = it->next;
 
-                    Expander subexp(Scope::from(nullptr, env), astscope);
+                    Expander subexp(Scope::from(env), astscope);
                     auto expr = Expression::unscoped_from();
                     expr->append(except_label);
                     {
@@ -728,7 +735,7 @@ struct Expander {
             _case.literal = SCOPES_GET_RESULT(subexp.expand(it->at));
             it = subexp.next;
 
-            Expander nativeexp(Scope::from(nullptr, env), astscope);
+            Expander nativeexp(Scope::from(env), astscope);
             _case.value = SCOPES_GET_RESULT(
                 nativeexp.expand_expression(ref(case_anchor, it), false));
             cases.push_back(_case);
@@ -740,7 +747,7 @@ struct Expander {
 
             _case.kind = CK_Do;
 
-            Expander nativeexp(Scope::from(nullptr, env), astscope);
+            Expander nativeexp(Scope::from(env), astscope);
             _case.value = SCOPES_GET_RESULT(
                 nativeexp.expand_expression(ref(case_anchor, it), false));
             cases.push_back(_case);
@@ -756,7 +763,7 @@ struct Expander {
                 _case.kind = CK_Default;
             }
 
-            Expander nativeexp(Scope::from(nullptr, env), astscope);
+            Expander nativeexp(Scope::from(env), astscope);
             _case.value = SCOPES_GET_RESULT(
                 nativeexp.expand_expression(ref(case_anchor, it), false));
             cases.push_back(_case);
@@ -841,7 +848,7 @@ struct Expander {
                 it = subexp.next;
                 env = subexp.env;
 
-                subexp.env = Scope::from(nullptr, env);
+                subexp.env = Scope::from(env);
                 ifexpr->append_then(cond,
                     SCOPES_GET_RESULT(
                         subexp.expand_expression(ref(branch_anchor, it), false)));
@@ -852,7 +859,7 @@ struct Expander {
         if (it != EOL) {
             auto else_anchor = it->at.anchor();
             it = it->next;
-            Expander subexp(Scope::from(nullptr, env), astscope);
+            Expander subexp(Scope::from(env), astscope);
 
             ifexpr->append_else(
                 SCOPES_GET_RESULT(
@@ -991,7 +998,7 @@ struct Expander {
         auto anchor = it->at.anchor();
         it = it->next;
 
-        Expander subexp(Scope::from(nullptr, env), astscope, it->next);
+        Expander subexp(Scope::from(env), astscope, it->next);
         ValueRef label = SCOPES_GET_RESULT(subexp.expand(it->at));
         it = subexp.next;
 
@@ -1036,8 +1043,8 @@ struct Expander {
     SCOPES_RESULT(sc_list_scope_tuple_t) expand_symbol(const ConstRef &node) {
         SCOPES_RESULT_TYPE(sc_list_scope_tuple_t);
         ValueRef symbol_handler_node;
-        const String *doc;
-        if (env->lookup(ConstInt::symbol_from(SYM_SymbolWildcard), symbol_handler_node, doc)) {
+        //GlobalStringRef doc;
+        if (env->lookup(ConstInt::symbol_from(SYM_SymbolWildcard), symbol_handler_node)) {
             auto T = try_get_const_type(symbol_handler_node);
             if (T != list_expander_func_type) {
                 SCOPES_TRACE_HOOK(symbol_handler_node);
@@ -1090,8 +1097,7 @@ struct Expander {
             // resolve symbol
             if (headT == TYPE_Symbol) {
                 ValueRef headnode;
-                const String *doc;
-                if (env->lookup(head.cast<Const>(), headnode, doc)) {
+                if (env->lookup(head.cast<Const>(), headnode)) {
                     head = ref(head.anchor(), headnode);
                     headT = try_get_const_type(head);
                 }
@@ -1145,8 +1151,7 @@ struct Expander {
             }
 
             ValueRef list_handler_node;
-            const String *doc;
-            if (env->lookup(ConstInt::symbol_from(Symbol(SYM_ListWildcard)), list_handler_node, doc)) {
+            if (env->lookup(ConstInt::symbol_from(Symbol(SYM_ListWildcard)), list_handler_node)) {
                 auto T = try_get_const_type(list_handler_node);
                 if (T != list_expander_func_type) {
                     SCOPES_TRACE_HOOK(list_handler_node);
@@ -1184,8 +1189,7 @@ struct Expander {
             Symbol name = SCOPES_GET_RESULT(extract_symbol_constant(node));
 
             ValueRef result;
-            const String *doc;
-            if (!env->lookup(node.cast<ConstInt>(), result, doc)) {
+            if (!env->lookup(node.cast<ConstInt>(), result)) {
                 sc_list_scope_tuple_t result = SCOPES_GET_RESULT(expand_symbol(node));
                 if (result._0) {
                     ValueRef newnode = result._0->at;
@@ -1245,11 +1249,11 @@ SCOPES_RESULT(TemplateRef) expand_module(const Anchor *anchor, const List *expr,
     Timer sum_expand_time(TIMER_Expand);
     assert(anchor);
     StyledString ss = StyledString::plain();
-    ss.out << anchor->path.name()->data << ":" << anchor->lineno;
+    ss.out << anchor->path.name() << ":" << anchor->lineno;
     TemplateRef mainfunc = ref(anchor, Template::from(Symbol(ss.str())));
 
     const Scope *subenv = scope?scope:sc_get_globals();
-    const String *doc = nullptr;
+    GlobalStringRef doc;
     if (expr && (expr->next != EOL)) {
         doc = try_extract_string(expr->at);
         if (doc) {
@@ -1269,11 +1273,11 @@ SCOPES_RESULT(TemplateRef) expand_module_stage(const Anchor *anchor, const List 
     Timer sum_expand_time(TIMER_Expand);
     assert(anchor);
     StyledString ss = StyledString::plain();
-    ss.out << anchor->path.name()->data << ":" << anchor->lineno;
+    ss.out << anchor->path.name() << ":" << anchor->lineno;
     TemplateRef mainfunc = ref(anchor, Template::from(Symbol(ss.str())));
 
     const Scope *subenv = scope?scope:sc_get_globals();
-    subenv = Scope::from(nullptr, subenv);
+    subenv = Scope::from(subenv);
     Expander subexpr(subenv, mainfunc);
     mainfunc->value = SCOPES_GET_RESULT(subexpr.expand_expression(ref(anchor, expr), false));
 

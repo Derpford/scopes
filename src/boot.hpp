@@ -10,7 +10,16 @@
 #include "valueref.inc"
 #include "result.hpp"
 
+#include <string>
+
 namespace scopes {
+
+extern std::string compiler_path;
+extern std::string compiler_dir;
+extern std::string clang_include_dir;
+extern std::string include_dir;
+extern size_t compiler_argc;
+extern char **compiler_argv;
 
 void on_startup();
 void on_shutdown();

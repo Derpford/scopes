@@ -11,6 +11,7 @@
 #include "valueref.inc"
 
 #include <stdint.h>
+#include <string>
 
 namespace scopes {
 
@@ -31,8 +32,8 @@ SCOPES_COMPILER_FILE_KIND()
 #undef T
 };
 
-SCOPES_RESULT(void) compile_object(const String *triple,
-    CompilerFileKind kind, const String *path, const Scope *scope, uint64_t flags);
+SCOPES_RESULT(void) compile_object(const std::string &triple,
+    CompilerFileKind kind, const std::string &path, const Scope *scope, uint64_t flags);
 SCOPES_RESULT(ConstPointerRef) compile(const FunctionRef &fn, uint64_t flags);
 
 } // namespace scopes

@@ -8,6 +8,7 @@
 #include "hash.hpp"
 #include "styled_stream.hpp"
 #include "symbol_enum.inc"
+#include "string.hpp"
 
 #include <memory.h>
 #include <string.h>
@@ -18,8 +19,8 @@
 
 namespace scopes {
 
-static std::unordered_map<Symbol, const String *, Symbol::Hash> map_symbol_name;
-static std::unordered_map<const String *, Symbol> map_name_symbol;
+static std::unordered_map<Symbol, const std::string *, Symbol::Hash> map_symbol_name;
+static std::unordered_map<std::string, Symbol> map_name_symbol;
 
 static uint64_t num_symbols = 0;
 
@@ -37,7 +38,7 @@ size_t Symbol::symbol_count() {
     return num_symbols;
 }
 
-void Symbol::verify_unmapped(Symbol id, const String *name) {
+void Symbol::verify_unmapped(Symbol id, const std::string &name) {
     auto it = map_name_symbol.find({ name });
     if (it != map_name_symbol.end()) {
         StyledStream ss(SCOPES_CERR);
@@ -50,17 +51,17 @@ void Symbol::verify_unmapped(Symbol id, const String *name) {
     }
 }
 
-void Symbol::map_symbol(Symbol id, const String *name) {
+void Symbol::map_symbol(Symbol id, const std::string &name) {
     map_name_symbol[name] = id;
-    map_symbol_name[id] = name;
+    map_symbol_name[id] = new std::string(name);
 }
 
-void Symbol::map_known_symbol(Symbol id, const String *name) {
+void Symbol::map_known_symbol(Symbol id, const std::string &name) {
     verify_unmapped(id, name);
     map_symbol(id, name);
 }
 
-Symbol Symbol::get_symbol(const String *name) {
+Symbol Symbol::get_symbol(const std::string &name) {
     auto it = map_name_symbol.find(name);
     if (it != map_name_symbol.end()) {
         auto oldname = get_symbol_name(it->second);
@@ -72,16 +73,16 @@ Symbol Symbol::get_symbol(const String *name) {
         return it->second;
     }
     num_symbols++;
-    Symbol id = Symbol::wrap(name->hash());
+    Symbol id = Symbol::wrap(hash_bytes(name.data(), name.size()));
     map_symbol(id, name);
     return id;
 }
 
-const String *Symbol::get_symbol_name(Symbol id) {
+const std::string &Symbol::get_symbol_name(Symbol id) {
     auto it = map_symbol_name.find(id);
     if (it == map_symbol_name.end())
         it = map_symbol_name.find(SYM_Corrupted);
-    return it->second;
+    return *(it->second);
 }
 
 Symbol::Symbol(uint64_t tid) :
@@ -99,7 +100,7 @@ Symbol::Symbol(Symbol::EnumT id) :
     _value(id) {
 }
 
-Symbol::Symbol(const String *str) :
+Symbol::Symbol(const std::string &str) :
     _value(get_symbol(str)._value) {
 }
 
@@ -164,36 +165,36 @@ uint64_t Symbol::value() const {
     return _value;
 }
 
-const String *Symbol::name() const {
+const std::string &Symbol::name() const {
     return get_symbol_name(*this);
 }
 
 void Symbol::_init_symbols() {
-#define T(sym, name) map_known_symbol(sym, String::from(name));
+#define T(sym, name) map_known_symbol(sym, name);
     SCOPES_SYMBOLS()
 #undef T
 #define T(NAME) \
-    map_known_symbol(SYM_SPIRV_StorageClass ## NAME, String::from(#NAME));
+    map_known_symbol(SYM_SPIRV_StorageClass ## NAME, #NAME);
     B_SPIRV_STORAGE_CLASS()
 #undef T
 #define T(NAME) \
-    map_known_symbol(SYM_SPIRV_BuiltIn ## NAME, String::from("spirv." #NAME));
+    map_known_symbol(SYM_SPIRV_BuiltIn ## NAME, "spirv." #NAME);
     B_SPIRV_BUILTINS()
 #undef T
 #define T(NAME) \
-    map_known_symbol(SYM_SPIRV_ExecutionMode ## NAME, String::from(#NAME));
+    map_known_symbol(SYM_SPIRV_ExecutionMode ## NAME, #NAME);
     B_SPIRV_EXECUTION_MODE()
 #undef T
 #define T(NAME) \
-    map_known_symbol(SYM_SPIRV_Dim ## NAME, String::from(#NAME));
+    map_known_symbol(SYM_SPIRV_Dim ## NAME, #NAME);
     B_SPIRV_DIM()
 #undef T
 #define T(NAME) \
-    map_known_symbol(SYM_SPIRV_ImageFormat ## NAME, String::from(#NAME));
+    map_known_symbol(SYM_SPIRV_ImageFormat ## NAME, #NAME);
     B_SPIRV_IMAGE_FORMAT()
 #undef T
 #define T(NAME) \
-    map_known_symbol(SYM_SPIRV_ImageOperand ## NAME, String::from(#NAME));
+    map_known_symbol(SYM_SPIRV_ImageOperand ## NAME, #NAME);
     B_SPIRV_IMAGE_OPERAND()
 #undef T
 
@@ -218,9 +219,8 @@ void Symbol::_init_symbols() {
 
 StyledStream& Symbol::stream(StyledStream& ost) const {
     auto s = name();
-    assert(s);
     ost << Style_Symbol << "'";
-    s->stream(ost, SYMBOL_ESCAPE_CHARS);
+    stream_escaped(ost, s, SYMBOL_ESCAPE_CHARS);
     ost << Style_None;
     return ost;
 }
@@ -238,10 +238,10 @@ StyledStream& operator<<(StyledStream& ost, const Symbol &sym) {
 bool ends_with_parenthesis(Symbol sym) {
     if (sym == SYM_Parenthesis)
         return true;
-    const String *str = sym.name();
-    if (str->count < 3)
+    auto str = sym.name();
+    if (str.size() < 3)
         return false;
-    const char *dot = str->data + str->count - 3;
+    const char *dot = str.data() + str.size() - 3;
     return !strcmp(dot, "...");
 }
 

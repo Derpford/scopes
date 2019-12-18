@@ -101,7 +101,7 @@ static void init_values_arrayT(std::vector< T * > &dest, int numvalues, const sc
 //------------------------------------------------------------------------------
 
 static const Scope *globals = nullptr;
-static const Scope *original_globals = Scope::from(nullptr, nullptr);
+static const Scope *original_globals = Scope::from(nullptr);
 
 //------------------------------------------------------------------------------
 
@@ -119,9 +119,9 @@ sc_valueref_raises_t convert_result(const Result<FunctionRef> &_result) CRESULT;
 sc_valueref_raises_t convert_result(const Result<TemplateRef> &_result) CRESULT;
 sc_valueref_raises_t convert_result(const Result<ConstPointerRef> &_result) CRESULT;
 sc_valueref_raises_t convert_result(const Result<ConstRef> &_result) CRESULT;
+sc_globalstringref_raises_t convert_result(const Result<GlobalStringRef> &_result) CRESULT;
 
 sc_type_raises_t convert_result(const Result<const Type *> &_result) CRESULT;
-sc_string_raises_t convert_result(const Result<const String *> &_result) CRESULT;
 
 sc_scope_raises_t convert_result(const Result<const Scope *> &_result) CRESULT;
 
@@ -198,7 +198,7 @@ int sc_cache_misses() {
 
 sc_rawstring_i32_array_tuple_t sc_launch_args() {
     using namespace scopes;
-    return {(int)scopes_argc, scopes_argv};
+    return {(int)compiler_argc, compiler_argv};
 }
 
 sc_valueref_list_scope_raises_t sc_expand(sc_valueref_t expr, const sc_list_t *next, const sc_scope_t *scope) {
@@ -276,29 +276,29 @@ sc_valueref_raises_t sc_compile(sc_valueref_t srcl, uint64_t flags) {
     return convert_result(compile(result, flags));
 }
 
-sc_string_raises_t sc_compile_spirv(sc_symbol_t target, sc_valueref_t srcl, uint64_t flags) {
+sc_globalstringref_raises_t sc_compile_spirv(sc_symbol_t target, sc_valueref_t srcl, uint64_t flags) {
     using namespace scopes;
-    SCOPES_RESULT_TYPE(const String *);
+    SCOPES_RESULT_TYPE(GlobalStringRef);
     auto result = SCOPES_C_GET_RESULT(extract_function_constant(srcl));
     return convert_result(compile_spirv(target, result, flags));
 }
 
-sc_string_raises_t sc_compile_glsl(int version, sc_symbol_t target, sc_valueref_t srcl, uint64_t flags) {
+sc_globalstringref_raises_t sc_compile_glsl(int version, sc_symbol_t target, sc_valueref_t srcl, uint64_t flags) {
     using namespace scopes;
-    SCOPES_RESULT_TYPE(const String *);
+    SCOPES_RESULT_TYPE(GlobalStringRef);
     auto result = SCOPES_C_GET_RESULT(extract_function_constant(srcl));
     return convert_result(compile_glsl(version, target, result, flags));
 }
 
-const sc_string_t *sc_default_target_triple() {
+sc_globalstringref_t sc_default_target_triple() {
     using namespace scopes;
-    return get_default_target_triple();
+    return GlobalString::from_stdstring(get_default_target_triple());
 }
 
-sc_void_raises_t sc_compile_object(const sc_string_t *target_triple,
-    int file_kind, const sc_string_t *path, const sc_scope_t *table, uint64_t flags) {
+sc_void_raises_t sc_compile_object(sc_globalstringref_t target_triple,
+    int file_kind, sc_globalstringref_t path, const sc_scope_t *table, uint64_t flags) {
     using namespace scopes;
-    return convert_result(compile_object(target_triple, (CompilerFileKind)file_kind, path, table, flags));
+    return convert_result(compile_object(target_triple->value, (CompilerFileKind)file_kind, path->value, table, flags));
 }
 
 void sc_enter_solver_cli () {
@@ -309,25 +309,25 @@ void sc_enter_solver_cli () {
 // stdin/out
 ////////////////////////////////////////////////////////////////////////////////
 
-const sc_string_t *sc_default_styler(sc_symbol_t style, const sc_string_t *str) {
+sc_globalstringref_t sc_default_styler(sc_symbol_t style, sc_globalstringref_t str) {
     using namespace scopes;
     StyledString ss;
     if (!style.is_known()) {
-        ss.out << str->data;
+        ss.out << str;
     } else {
-        ss.out << Style(style.known_value()) << str->data << Style_None;
+        ss.out << Style(style.known_value()) << str << Style_None;
     }
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
-sc_bool_string_tuple_t sc_prompt(const sc_string_t *s, const sc_string_t *pre) {
+sc_bool_globalstringref_tuple_t sc_prompt(sc_globalstringref_t s, sc_globalstringref_t pre) {
     using namespace scopes;
-    if (pre->count) {
-        linenoisePreloadBuffer(pre->data);
+    if (pre) {
+        linenoisePreloadBuffer(pre->value.c_str());
     }
-    char *r = linenoise(s->data);
+    char *r = linenoise(s->value.c_str());
     if (!r) {
-        return { false, Symbol(SYM_Unnamed).name() };
+        return { false, GlobalString::from_cstr("") };
     }
     linenoiseHistoryAdd(r);
 #ifdef SCOPES_WIN32
@@ -336,17 +336,18 @@ sc_bool_string_tuple_t sc_prompt(const sc_string_t *s, const sc_string_t *pre) {
     ss << std::endl;
 #endif
 #endif
-    return { true, String::from_cstr(r) };
+    auto result = GlobalString::from_cstr(r);
+    return { true, result };
 }
 
-void sc_save_history(const sc_string_t *path) {
+void sc_save_history(sc_globalstringref_t path) {
     using namespace scopes;
-    linenoiseHistorySave(path->data);
+    linenoiseHistorySave(path->value.c_str());
 }
 
-void sc_load_history(const sc_string_t *path) {
+void sc_load_history(sc_globalstringref_t path) {
     using namespace scopes;
-    linenoiseHistoryLoad(path->data);
+    linenoiseHistoryLoad(path->value.c_str());
 }
 
 namespace scopes {
@@ -360,11 +361,10 @@ static void prompt_completion_cb(const char *buf, linenoiseCompletions *lc) {
         return;
     }
 
-    const String* name = String::from_cstr(buf);
-    Symbol sym(name);
+    Symbol sym(buf);
     const Scope *scope = autocomplete_scope ? autocomplete_scope : globals;
     for (const auto& m : scope->find_elongations(sym))
-        linenoiseAddCompletion(lc, m.name()->data);
+        linenoiseAddCompletion(lc, m.name().c_str());
 }
 
 }
@@ -374,63 +374,59 @@ void sc_set_autocomplete_scope(const sc_scope_t* scope) {
     autocomplete_scope = scope;
 }
 
-const sc_string_t *sc_format_message(const sc_anchor_t *anchor, const sc_string_t *message) {
+sc_globalstringref_t sc_format_message(const sc_anchor_t *anchor, sc_globalstringref_t message) {
     using namespace scopes;
     StyledString ss;
     if (anchor) {
         ss.out << anchor << " ";
     }
-    ss.out << message->data << std::endl;
+    ss.out << message->value << std::endl;
     if (anchor) {
         anchor->stream_source_line(ss.out);
     }
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
-void sc_write(const sc_string_t *value) {
+void sc_write(sc_globalstringref_t value) {
     using namespace scopes;
 #if SCOPES_USE_WCHAR
     StyledStream ss(SCOPES_COUT);
-    ss << value->data;
+    ss << value->value;
 #else
-    fputs(value->data, stdout);
+    fputs(value->value.c_str(), stdout);
 #endif
 }
 
 // file i/o
 ////////////////////////////////////////////////////////////////////////////////
 
-const sc_string_t *sc_realpath(const sc_string_t *path) {
+sc_globalstringref_t sc_realpath(sc_globalstringref_t path) {
     using namespace scopes;
     char buf[PATH_MAX];
-    auto result = realpath(path->data, buf);
-    if (!result) {
-        return Symbol(SYM_Unnamed).name();
-    } else {
-        return String::from_cstr(result);
-    }
+    auto result = GlobalString::from_cstr(realpath(path->value.c_str(), buf));
+    return result;
 }
 
-const sc_string_t *sc_dirname(const sc_string_t *path) {
+sc_globalstringref_t sc_dirname(sc_globalstringref_t path) {
     using namespace scopes;
-    auto pathcopy = strdup(path->data);
-    auto result = String::from_cstr(dirname(pathcopy));
+    auto pathcopy = strdup(path->value.c_str());
+    auto result = GlobalString::from_cstr(dirname(pathcopy));
     free(pathcopy);
     return result;
 }
 
-const sc_string_t *sc_basename(const sc_string_t *path) {
+sc_globalstringref_t sc_basename(sc_globalstringref_t path) {
     using namespace scopes;
-    auto pathcopy = strdup(path->data);
-    auto result = String::from_cstr(basename(pathcopy));
+    auto pathcopy = strdup(path->value.c_str());
+    auto result = GlobalString::from_cstr(basename(pathcopy));
     free(pathcopy);
     return result;
 }
 
-bool sc_is_file(const sc_string_t *path) {
+bool sc_is_file(sc_globalstringref_t path) {
     using namespace scopes;
     struct stat s;
-    if( stat(path->data,&s) == 0 ) {
+    if( stat(path->value.c_str(),&s) == 0 ) {
         if( s.st_mode & S_IFDIR ) {
         } else if ( s.st_mode & S_IFREG ) {
             return true;
@@ -439,10 +435,10 @@ bool sc_is_file(const sc_string_t *path) {
     return false;
 }
 
-bool sc_is_directory(const sc_string_t *path) {
+bool sc_is_directory(sc_globalstringref_t path) {
     using namespace scopes;
     struct stat s;
-    if( stat(path->data,&s) == 0 ) {
+    if( stat(path->value.c_str(),&s) == 0 ) {
         if( s.st_mode & S_IFDIR ) {
             return true;
         }
@@ -478,15 +474,16 @@ void sc_error_append_calltrace(sc_error_t *err, sc_valueref_t callexpr) {
     err->trace(_backtrace);
 }
 
-sc_error_t *sc_error_new(const sc_string_t *msg) {
+sc_error_t *sc_error_new(sc_globalstringref_t msg) {
     using namespace scopes;
-    return ErrorUser::from(msg);
+    return ErrorUser::from(msg->value);
 }
-const sc_string_t *sc_format_error(const sc_error_t *err) {
+
+sc_globalstringref_t sc_format_error(const sc_error_t *err) {
     using namespace scopes;
     StyledString ss;
     stream_error_message(ss.out, err);
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
 void sc_dump_error(const sc_error_t *err) {
@@ -661,47 +658,47 @@ uint64_t sc_hashbytes (const char *data, size_t size) {
 // C Bridge
 ////////////////////////////////////////////////////////////////////////////////
 
-sc_scope_raises_t sc_import_c(const sc_string_t *path,
-    const sc_string_t *content, const sc_list_t *arglist, const sc_scope_t *scope) {
+sc_scope_raises_t sc_import_c(sc_globalstringref_t path,
+    sc_globalstringref_t content, const sc_list_t *arglist, const sc_scope_t *scope) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(const Scope *);
     std::vector<std::string> args;
     while (arglist) {
-        if (arglist->at.isa<ConstPointer>()) {
-            auto value = SCOPES_C_GET_RESULT(extract_string_constant(arglist->at));
-            args.push_back(value->data);
+        auto str = try_extract_string(arglist->at);
+        if (str) {
+            args.push_back(str->value);
         } else {
             auto value = SCOPES_C_GET_RESULT(extract_symbol_constant(arglist->at));
-            args.push_back(value.name()->data);
+            args.push_back(value.name());
         }
         arglist = arglist->next;
     }
-    SCOPES_C_RETURN(import_c_module(path->data, args, content->data, scope));
+    SCOPES_C_RETURN(import_c_module(path->value, args, content->value.c_str(), scope));
 }
 
-sc_void_raises_t sc_load_library(const sc_string_t *name) {
+sc_void_raises_t sc_load_library(sc_globalstringref_t name) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(void);
 //#ifdef SCOPES_WIN32
     // try to load library through regular interface first
     // so we get better error reporting
     dlerror();
-    void *handle = dlopen(name->data, RTLD_LAZY);
+    void *handle = dlopen(name->value.c_str(), RTLD_LAZY);
     if (!handle) {
         char *err = dlerror();
-        SCOPES_C_ERROR(RTLoadLibraryFailed, name, strdup(err));
+        SCOPES_C_ERROR(RTLoadLibraryFailed, name->value, strdup(err));
     }
 //#endif
-    if (LLVMLoadLibraryPermanently(name->data)) {
-        SCOPES_C_ERROR(RTLoadLibraryFailed, name, "reason unknown");
+    if (LLVMLoadLibraryPermanently(name->value.c_str())) {
+        SCOPES_C_ERROR(RTLoadLibraryFailed, name->value, "reason unknown");
     }
     return convert_result({});
 }
 
-sc_void_raises_t sc_load_object(const sc_string_t *path) {
+sc_void_raises_t sc_load_object(sc_globalstringref_t path) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(void);
-    SCOPES_C_CHECK_RESULT(add_object(path->data));
+    SCOPES_C_CHECK_RESULT(add_object(path->value.c_str()));
     return convert_result({});
 }
 
@@ -713,10 +710,10 @@ const sc_scope_t *sc_scope_bind(const sc_scope_t *scope, sc_valueref_t key, sc_v
     // ignore null values; this can happen when such a value is explicitly
     // created on the console
     if (!value) return scope;
-    return Scope::bind_from(key.cast<Const>(), value, nullptr, scope);
+    return Scope::bind_from(key.cast<Const>(), value, GlobalStringRef(), scope);
 }
 
-const sc_scope_t *sc_scope_bind_with_docstring(const sc_scope_t *scope, sc_valueref_t key, sc_valueref_t value, const sc_string_t *doc) {
+const sc_scope_t *sc_scope_bind_with_docstring(const sc_scope_t *scope, sc_valueref_t key, sc_valueref_t value, sc_globalstringref_t doc) {
     using namespace scopes;
     // ignore null values; this can happen when such a value is explicitly
     // created on the console
@@ -728,8 +725,7 @@ sc_valueref_raises_t sc_scope_at(const sc_scope_t *scope, sc_valueref_t key) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(ValueRef);
     ValueRef result;
-    const String *doc;
-    bool ok = scope->lookup(SCOPES_C_GET_RESULT(extract_constant(key)), result, doc);
+    bool ok = scope->lookup(SCOPES_C_GET_RESULT(extract_constant(key)), result);
     if (!ok) {
         if (try_get_const_type(key) == TYPE_Symbol) {
             auto sym = extract_symbol_constant(key).assert_ok();
@@ -757,29 +753,29 @@ sc_valueref_raises_t sc_scope_local_at(const sc_scope_t *scope, sc_valueref_t ke
     return convert_result(result);
 }
 
-const sc_string_t *sc_scope_module_docstring(const sc_scope_t *scope) {
+sc_globalstringref_t sc_scope_module_docstring(const sc_scope_t *scope) {
     using namespace scopes;
-    const String *doc = scope->header_doc();
+    auto doc = scope->header_doc();
     if (doc) return doc;
-    return Symbol(SYM_Unnamed).name();
+    return GlobalString::from_cstr("");
 }
 
-const sc_string_t *sc_scope_docstring(const sc_scope_t *scope, sc_valueref_t key) {
+sc_globalstringref_t sc_scope_docstring(const sc_scope_t *scope, sc_valueref_t key) {
     using namespace scopes;
     ValueRef result;
-    const String *doc;
+    GlobalStringRef doc;
     if (scope->lookup(key.cast<Const>(), result, doc) && doc) {
         return doc;
     }
-    return Symbol(SYM_Unnamed).name();
+    return GlobalString::from_cstr("");
 }
 
 const sc_scope_t *sc_scope_new() {
     using namespace scopes;
-    return Scope::from(nullptr, nullptr);
+    return Scope::from(nullptr);
 }
 
-const sc_scope_t *sc_scope_new_with_docstring(const sc_string_t *doc) {
+const sc_scope_t *sc_scope_new_with_docstring(sc_globalstringref_t doc) {
     using namespace scopes;
     return Scope::from(doc, nullptr);
 }
@@ -796,10 +792,10 @@ const sc_scope_t *sc_scope_unparent(const sc_scope_t *scope) {
 
 const sc_scope_t *sc_scope_new_subscope(const sc_scope_t *scope) {
     using namespace scopes;
-    return Scope::from(nullptr, scope);
+    return Scope::from(scope);
 }
 
-const sc_scope_t *sc_scope_new_subscope_with_docstring(const sc_scope_t *scope, const sc_string_t *doc) {
+const sc_scope_t *sc_scope_new_subscope_with_docstring(const sc_scope_t *scope, sc_globalstringref_t doc) {
     using namespace scopes;
     return Scope::from(doc, scope);
 }
@@ -847,9 +843,9 @@ sc_valueref_i32_tuple_t sc_scope_next_deleted(const sc_scope_t *scope, int index
 // Symbol
 ////////////////////////////////////////////////////////////////////////////////
 
-sc_symbol_t sc_symbol_new(const sc_string_t *str) {
+sc_symbol_t sc_symbol_new(sc_globalstringref_t str) {
     using namespace scopes;
-    return Symbol(str);
+    return Symbol(str->value);
 }
 
 bool sc_symbol_is_variadic(sc_symbol_t sym) {
@@ -857,17 +853,17 @@ bool sc_symbol_is_variadic(sc_symbol_t sym) {
     return ends_with_parenthesis(sym);
 }
 
-const sc_string_t *sc_symbol_to_string(sc_symbol_t sym) {
+sc_globalstringref_t sc_symbol_to_string(sc_symbol_t sym) {
     using namespace scopes;
-    return sym.name();
+    return GlobalString::from_stdstring(sym.name());
 }
 
-size_t counter = 1;
-sc_symbol_t sc_symbol_new_unique(const sc_string_t *str) {
+static size_t counter = 1;
+sc_symbol_t sc_symbol_new_unique(sc_globalstringref_t str) {
     using namespace scopes;
     std::stringstream ss;
-    ss << "#" << counter++ << "#" << str->data;
-    return Symbol(String::from_stdstring(ss.str()));
+    ss << "#" << counter++ << "#" << str->value;
+    return Symbol(ss.str());
 }
 
 size_t sc_symbol_count() {
@@ -884,79 +880,103 @@ sc_symbol_t sc_symbol_style(sc_symbol_t name) {
 // String
 ////////////////////////////////////////////////////////////////////////////////
 
-const sc_string_t *sc_string_new(const char *ptr, size_t count) {
+sc_globalstringref_t sc_globalstring_new(const char *ptr, size_t count) {
     using namespace scopes;
-    return String::from(ptr, count);
+    return GlobalString::from(ptr, count);
 }
 
-const sc_string_t *sc_string_new_from_cstr(const char *ptr) {
+sc_globalstringref_t sc_globalstring_new_from_cstr(const char *ptr) {
     using namespace scopes;
-    return String::from(ptr, strlen(ptr));
+    return GlobalString::from(ptr, strlen(ptr));
 }
 
-const sc_string_t *sc_string_join(const sc_string_t *a, const sc_string_t *b) {
+size_t sc_globalstring_count(sc_globalstringref_t str) {
     using namespace scopes;
-    return String::join(a,b);
+    return str->value.size();
+}
+
+sc_rawstring_size_t_tuple_t sc_globalstring_buffer(sc_globalstringref_t str) {
+    using namespace scopes;
+    return {str->value.data(), str->value.size()};
+}
+
+sc_globalstringref_t sc_globalstring_tag(sc_anchor_t *anchor, sc_globalstringref_t value) {
+    using namespace scopes;
+    return ref(anchor, value);
+}
+
+sc_globalstringref_t sc_globalstring_join(sc_globalstringref_t a, sc_globalstringref_t b) {
+    using namespace scopes;
+    return GlobalString::join(a,b);
 }
 
 namespace scopes {
-    static std::unordered_map<const String *, regexp::Reprog *> pattern_cache;
+    static std::unordered_map<const GlobalString *, regexp::Reprog *> pattern_cache;
 }
-sc_bool_i32_i32_raises_t sc_string_match(const sc_string_t *pattern, const sc_string_t *text) {
+
+sc_bool_i32_i32_raises_t sc_globalstring_match(sc_globalstringref_t pattern, sc_globalstringref_t text) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(sc_bool_i32_i32_tuple_t);
-    auto it = pattern_cache.find(pattern);
+    auto it = pattern_cache.find(pattern.unref());
     regexp::Reprog *m = nullptr;
     if (it == pattern_cache.end()) {
         const char *error = nullptr;
-        m = regexp::regcomp(pattern->data, 0, &error);
+        m = regexp::regcomp(pattern->value.c_str(), 0, &error);
         if (error) {
-            const String *err = String::from_cstr(error);
+            std::string err = error;
             regexp::regfree(m);
             SCOPES_C_ERROR(RTRegExError, err);
         }
-        pattern_cache.insert({ pattern, m });
+        pattern_cache.insert({ pattern.unref(), m });
     } else {
         m = it->second;
     }
     regexp::Resub sub;
-    bool ok = regexp::regexec(m, text->data, &sub, 0) == 0;
-    sc_bool_i32_i32_tuple_t result = {ok, (int)(sub.sub[0].sp - text->data), (int)(sub.sub[0].ep - text->data)};
-   SCOPES_C_RETURN(result);
+    const char *searchtext = text->value.c_str();
+    bool ok = regexp::regexec(m, searchtext, &sub, 0) == 0;
+    sc_bool_i32_i32_tuple_t result = {ok, (int)(sub.sub[0].sp - searchtext), (int)(sub.sub[0].ep - searchtext)};
+    SCOPES_C_RETURN(result);
 }
 
-size_t sc_string_count(const sc_string_t *str) {
+int sc_globalstring_compare(sc_globalstringref_t a, sc_globalstringref_t b) {
     using namespace scopes;
-    return str->count;
-}
-
-int sc_string_compare(const sc_string_t *a, const sc_string_t *b) {
-    using namespace scopes;
-    auto c = memcmp(a->data, b->data, std::min(a->count, b->count));
+    auto &&sa = a->value;
+    auto &&sb = b->value;
+    auto c = memcmp(sa.data(), sb.data(), std::min(sa.size(), sb.size()));
     if (c) return c;
-    if (a->count < b->count) return -1;
-    else if (a->count > b->count) return 1;
+    if (sa.size() < sb.size()) return -1;
+    else if (sa.size() > sb.size()) return 1;
     return 0;
 }
 
-sc_rawstring_size_t_tuple_t sc_string_buffer(const sc_string_t *str) {
-    using namespace scopes;
-    return {str->data, str->count};
-}
-
-const sc_string_t *sc_string_rslice(const sc_string_t *str, size_t offset) {
+sc_globalstringref_t sc_globalstring_rslice(sc_globalstringref_t str, size_t offset) {
     using namespace scopes;
     if (!offset) return str;
-    if (offset >= str->count)
-        return Symbol(SYM_Unnamed).name();
-    return String::from(str->data + offset, str->count - offset);
+    if (offset >= str->value.size())
+        return GlobalString::from_cstr("");
+    return GlobalString::from(str->value.data() + offset, str->value.size() - offset);
 }
 
-const sc_string_t *sc_string_lslice(const sc_string_t *str, size_t offset) {
+sc_globalstringref_t sc_globalstring_lslice(sc_globalstringref_t str, size_t offset) {
     using namespace scopes;
-    if (!offset) return Symbol(SYM_Unnamed).name();
-    if (offset >= str->count) return str;
-    return String::from(str->data, offset);
+    if (!offset) return GlobalString::from_cstr("");
+    if (offset >= str->value.size()) return str;
+    return GlobalString::from(str->value.data(), offset);
+}
+
+sc_globalstringref_raises_t sc_value_globalstring(sc_valueref_t value) {
+    using namespace scopes;
+    SCOPES_RESULT_TYPE(sc_globalstringref_t);
+    auto result = value.dyn_cast<GlobalString>();
+    if (!result) {
+        SCOPES_C_ERROR(ValueKindMismatch, VK_GlobalString, value->kind());
+    }
+    SCOPES_C_RETURN(result);
+}
+
+sc_valueref_t sc_globalstring_value(sc_globalstringref_t value) {
+    using namespace scopes;
+    return value;
 }
 
 // List
@@ -979,21 +999,21 @@ const sc_list_t *sc_list_dump(const sc_list_t *l) {
     return l;
 }
 
-const sc_string_t *sc_list_repr(const sc_list_t *l) {
+sc_globalstringref_t sc_list_repr(const sc_list_t *l) {
     using namespace scopes;
     StyledString ss;
     stream_list(ss.out, l, StreamListFormat::singleline());
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
-const sc_string_t *sc_list_serialize(const sc_list_t *l) {
+sc_globalstringref_t sc_list_serialize(const sc_list_t *l) {
     using namespace scopes;
     StyledString ss = StyledString::plain();
     while (l) {
         stream_value(ss.out, l->at, StreamValueFormat::serialize());
         l = l->next;
     }
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
 sc_valueref_list_tuple_t sc_list_decons(const sc_list_t *l) {
@@ -1071,11 +1091,11 @@ const sc_anchor_t *sc_anchor_offset(const sc_anchor_t *anchor, int offset) {
 // Closure
 ////////////////////////////////////////////////////////////////////////////////
 
-const sc_string_t *sc_closure_get_docstring(const sc_closure_t *func) {
+sc_globalstringref_t sc_closure_get_docstring(const sc_closure_t *func) {
     using namespace scopes;
     assert(func);
     if (!func->func->docstring)
-        return Symbol(SYM_Unnamed).name();
+        return GlobalString::from_cstr("");
     return func->func->docstring;
 }
 
@@ -1094,32 +1114,32 @@ sc_valueref_t sc_closure_get_context(const sc_closure_t *func) {
 // Value
 ////////////////////////////////////////////////////////////////////////////////
 
-const sc_string_t *sc_value_repr (sc_valueref_t value) {
+sc_globalstringref_t sc_value_repr (sc_valueref_t value) {
     using namespace scopes;
     StyledString ss;
     stream_value(ss.out, value, StreamValueFormat::singleline());
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
-const sc_string_t *sc_value_content_repr (sc_valueref_t value) {
+sc_globalstringref_t sc_value_content_repr (sc_valueref_t value) {
     using namespace scopes;
     StyledString ss;
     stream_value(ss.out, value, StreamValueFormat::content());
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
-const sc_string_t *sc_value_ast_repr (sc_valueref_t value) {
+sc_globalstringref_t sc_value_ast_repr (sc_valueref_t value) {
     using namespace scopes;
     StyledString ss;
     stream_value(ss.out, value);
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
-const sc_string_t *sc_value_tostring (sc_valueref_t value) {
+sc_globalstringref_t sc_value_tostring (sc_valueref_t value) {
     using namespace scopes;
     StyledString ss = StyledString::plain();
     stream_value(ss.out, value, StreamValueFormat::content());
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
 const sc_type_t *sc_value_type (sc_valueref_t value) {
@@ -1194,9 +1214,9 @@ sc_valueref_t sc_value_unwrap(const sc_type_t *type, sc_valueref_t value) {
     return result;
 }
 
-const sc_string_t *sc_value_kind_string(int kind) {
+sc_globalstringref_t sc_value_kind_string(int kind) {
     using namespace scopes;
-    return String::from_cstr(get_value_kind_name((ValueKind)kind));
+    return GlobalString::from_cstr(get_value_kind_name((ValueKind)kind));
 }
 
 sc_valueref_t sc_keyed_new(sc_symbol_t key, sc_valueref_t value) {
@@ -1428,16 +1448,6 @@ sc_symbol_raises_t sc_global_storage_class(sc_valueref_t value) {
     SCOPES_C_RETURN(glob->storage_class);
 }
 
-sc_valueref_t sc_global_string_new(const char *ptr, size_t count) {
-    using namespace scopes;
-    return GlobalString::from(ptr, count);
-}
-
-sc_valueref_t sc_global_string_new_from_cstr(const char *ptr) {
-    using namespace scopes;
-    return GlobalString::from(ptr, strlen(ptr));
-}
-
 sc_valueref_t sc_if_new() {
     using namespace scopes;
     return If::from();
@@ -1613,20 +1623,20 @@ sc_valueref_t sc_merge_new(sc_valueref_t label, sc_valueref_t value) {
 // Parser
 ////////////////////////////////////////////////////////////////////////////////
 
-sc_valueref_raises_t sc_parse_from_path(const sc_string_t *path) {
+sc_valueref_raises_t sc_parse_from_path(sc_globalstringref_t path) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(ValueRef);
-    auto sf = SourceFile::from_file(path);
+    auto sf = SourceFile::from_file(Symbol(path->value));
     if (!sf) {
-        SCOPES_C_ERROR(RTUnableToOpenFile, path);
+        SCOPES_C_ERROR(RTUnableToOpenFile, path->value);
     }
     LexerParser parser(std::move(sf));
     return convert_result(parser.parse());
 }
 
-sc_valueref_raises_t sc_parse_from_string(const sc_string_t *str) {
+sc_valueref_raises_t sc_parse_from_string(sc_globalstringref_t str) {
     using namespace scopes;
-    auto sf = SourceFile::from_string(Symbol("<string>"), str);
+    auto sf = SourceFile::from_string(Symbol("<string>"), str.unref());
     assert(sf);
     LexerParser parser(std::move(sf));
     return convert_result(parser.parse());
@@ -1659,16 +1669,16 @@ sc_valueref_raises_t sc_type_local_at(const sc_type_t *T, sc_symbol_t key) {
     return convert_result(result);
 }
 
-const sc_string_t *sc_type_get_docstring(const sc_type_t *T, sc_symbol_t key) {
+sc_globalstringref_t sc_type_get_docstring(const sc_type_t *T, sc_symbol_t key) {
     using namespace scopes;
     TypeEntry entry;
     if (T->lookup(key, entry) && entry.doc) {
         return entry.doc;
     }
-    return Symbol(SYM_Unnamed).name();
+    return GlobalString::from_cstr("");
 }
 
-void sc_type_set_docstring(const sc_type_t *T, sc_symbol_t key, const sc_string_t *str) {
+void sc_type_set_docstring(const sc_type_t *T, sc_symbol_t key, sc_globalstringref_t str) {
     using namespace scopes;
     TypeEntry entry;
     if (!T->lookup_local(key, entry)) {
@@ -1828,11 +1838,11 @@ bool sc_type_is_default_suffix(const sc_type_t *T) {
     return is_default_suffix(T);
 }
 
-const sc_string_t *sc_type_string(const sc_type_t *T) {
+sc_globalstringref_t sc_type_string(const sc_type_t *T) {
     using namespace scopes;
     StyledString ss = StyledString::plain();
     stream_type_name(ss.out, T);
-    return ss.str();
+    return GlobalString::from_stdstring(ss.str());
 }
 
 sc_symbol_valueref_tuple_t sc_type_next(const sc_type_t *type, sc_symbol_t key) {
@@ -1978,7 +1988,7 @@ bool sc_integer_type_is_signed(const sc_type_t *T) {
 // Typename Type
 ////////////////////////////////////////////////////////////////////////////////
 
-sc_type_raises_t sc_typename_type(const sc_string_t *str, const sc_type_t *supertype) {
+sc_type_raises_t sc_typename_type(sc_globalstringref_t str, const sc_type_t *supertype) {
     using namespace scopes;
     SCOPES_RESULT_TYPE(const Type *);
     SCOPES_C_CHECK_RESULT(verify_kind<TK_Typename>(supertype));
@@ -1988,7 +1998,7 @@ sc_type_raises_t sc_typename_type(const sc_string_t *str, const sc_type_t *super
     if (!is_opaque(supertype)) {
         SCOPES_C_ERROR(RTIllegalSupertype, supertype);
     }
-    auto T = incomplete_typename_type(str, (supertype == TYPE_Typename) ? nullptr : supertype);
+    auto T = incomplete_typename_type(str->value, (supertype == TYPE_Typename) ? nullptr : supertype);
     SCOPES_C_RETURN(T);
 }
 
@@ -2229,12 +2239,12 @@ namespace scopes {
 static void bind_extern(Symbol globalsym, Symbol externsym, const Type *T) {
     globals = Scope::bind_from(ConstInt::symbol_from(globalsym),
         ref(builtin_anchor(), Global::from(T, externsym, GF_NonWritable)),
-        nullptr, globals);
+        GlobalStringRef(), globals);
 }
 
 static void bind_new_value(Symbol sym, const ValueRef &value) {
     globals = Scope::bind_from(ConstInt::symbol_from(sym),
-        ref(builtin_anchor(), value), nullptr, globals);
+        ref(builtin_anchor(), value), GlobalStringRef(), globals);
 }
 
 static void bind_symbol(Symbol sym, Symbol value) {
@@ -2247,8 +2257,8 @@ static void bind_extern(Symbol sym, const Type *T) {
 
 void init_globals(int argc, char *argv[]) {
     globals = original_globals;
-    scopes_argc = argc;
-    scopes_argv = argv;
+    compiler_argc = argc;
+    compiler_argv = argv;
 
 #define DEFINE_EXTERN_C_FUNCTION(FUNC, RETTYPE, ...) \
     (void)FUNC; /* ensure that the symbol is there */ \
@@ -2273,25 +2283,25 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typify_template, TYPE_ValueRef, TYPE_ValueRef, TYPE_I32, native_ro_pointer_type(TYPE_Type));
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typify, TYPE_ValueRef, TYPE_Closure, TYPE_I32, native_ro_pointer_type(TYPE_Type));
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile, TYPE_ValueRef, TYPE_ValueRef, TYPE_U64);
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_spirv, TYPE_String, TYPE_Symbol, TYPE_ValueRef, TYPE_U64);
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_glsl, TYPE_String, TYPE_I32, TYPE_Symbol, TYPE_ValueRef, TYPE_U64);
-    DEFINE_EXTERN_C_FUNCTION(sc_default_target_triple, TYPE_String);
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_object, _void, TYPE_String, TYPE_I32, TYPE_String, TYPE_Scope, TYPE_U64);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_spirv, TYPE_GlobalStringRef, TYPE_Symbol, TYPE_ValueRef, TYPE_U64);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_glsl, TYPE_GlobalStringRef, TYPE_I32, TYPE_Symbol, TYPE_ValueRef, TYPE_U64);
+    DEFINE_EXTERN_C_FUNCTION(sc_default_target_triple, TYPE_GlobalStringRef);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_compile_object, _void, TYPE_GlobalStringRef, TYPE_I32, TYPE_GlobalStringRef, TYPE_Scope, TYPE_U64);
     DEFINE_EXTERN_C_FUNCTION(sc_enter_solver_cli, _void);
     DEFINE_EXTERN_C_FUNCTION(sc_launch_args, arguments_type({TYPE_I32,native_ro_pointer_type(rawstring)}));
 
-    DEFINE_EXTERN_C_FUNCTION(sc_prompt, arguments_type({TYPE_Bool, TYPE_String}), TYPE_String, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_save_history, _void, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_load_history, _void, TYPE_String);
+    DEFINE_EXTERN_C_FUNCTION(sc_default_styler, TYPE_GlobalStringRef, TYPE_Symbol, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_prompt, arguments_type({TYPE_Bool, TYPE_GlobalStringRef}), TYPE_GlobalStringRef, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_save_history, _void, rawstring);
+    DEFINE_EXTERN_C_FUNCTION(sc_load_history, _void, rawstring);
     DEFINE_EXTERN_C_FUNCTION(sc_set_autocomplete_scope, _void, TYPE_Scope);
-    DEFINE_EXTERN_C_FUNCTION(sc_default_styler, TYPE_String, TYPE_Symbol, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_format_message, TYPE_String, TYPE_Anchor, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_write, _void, TYPE_String);
+    DEFINE_EXTERN_C_FUNCTION(sc_format_message, TYPE_GlobalStringRef, TYPE_Anchor, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_write, _void, TYPE_GlobalStringRef);
 
-    DEFINE_EXTERN_C_FUNCTION(sc_value_repr, TYPE_String, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_value_content_repr, TYPE_String, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_value_ast_repr, TYPE_String, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_value_tostring, TYPE_String, TYPE_ValueRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_value_repr, TYPE_GlobalStringRef, TYPE_ValueRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_value_content_repr, TYPE_GlobalStringRef, TYPE_ValueRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_value_ast_repr, TYPE_GlobalStringRef, TYPE_ValueRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_value_tostring, TYPE_GlobalStringRef, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_value_type, TYPE_Type, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_value_qualified_type, TYPE_Type, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_value_anchor, TYPE_Anchor, TYPE_ValueRef);
@@ -2304,7 +2314,7 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_identity, TYPE_ValueRef, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_value_wrap, TYPE_ValueRef, TYPE_Type, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_value_unwrap, TYPE_ValueRef, TYPE_Type, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_value_kind_string, TYPE_String, TYPE_I32);
+    DEFINE_EXTERN_C_FUNCTION(sc_value_kind_string, TYPE_GlobalStringRef, TYPE_I32);
 
     DEFINE_EXTERN_C_FUNCTION(sc_keyed_new, TYPE_ValueRef, TYPE_Symbol, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_empty_argument_list, TYPE_ValueRef);
@@ -2336,8 +2346,6 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_global_binding, TYPE_I32, TYPE_ValueRef);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_global_descriptor_set, TYPE_I32, TYPE_ValueRef);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_global_storage_class, TYPE_Symbol, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_global_string_new, TYPE_ValueRef, native_ro_pointer_type(TYPE_I8), TYPE_USize);
-    DEFINE_EXTERN_C_FUNCTION(sc_global_string_new_from_cstr, TYPE_ValueRef, native_ro_pointer_type(TYPE_I8));
     DEFINE_EXTERN_C_FUNCTION(sc_if_new, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_if_append_then_clause, _void, TYPE_ValueRef, TYPE_ValueRef, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_if_append_else_clause, _void, TYPE_ValueRef, TYPE_ValueRef);
@@ -2375,19 +2383,19 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_label_set_body, _void, TYPE_ValueRef, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_merge_new, TYPE_ValueRef, TYPE_ValueRef, TYPE_ValueRef);
 
-    DEFINE_EXTERN_C_FUNCTION(sc_is_file, TYPE_Bool, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_is_directory, TYPE_Bool, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_realpath, TYPE_String, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_dirname, TYPE_String, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_basename, TYPE_String, TYPE_String);
+    DEFINE_EXTERN_C_FUNCTION(sc_realpath, TYPE_GlobalStringRef, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_dirname, TYPE_GlobalStringRef, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_basename, TYPE_GlobalStringRef, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_is_file, TYPE_Bool, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_is_directory, TYPE_Bool, TYPE_GlobalStringRef);
 
     DEFINE_EXTERN_C_FUNCTION(sc_get_globals, TYPE_Scope);
     DEFINE_EXTERN_C_FUNCTION(sc_get_original_globals, TYPE_Scope);
     DEFINE_EXTERN_C_FUNCTION(sc_set_globals, _void, TYPE_Scope);
 
     DEFINE_EXTERN_C_FUNCTION(sc_error_append_calltrace, _void, TYPE_Error, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_error_new, TYPE_Error, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_format_error, TYPE_String, TYPE_Error);
+    DEFINE_EXTERN_C_FUNCTION(sc_error_new, TYPE_Error, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_format_error, TYPE_GlobalStringRef, TYPE_Error);
     DEFINE_EXTERN_C_FUNCTION(sc_dump_error, _void, TYPE_Error);
 
     DEFINE_EXTERN_C_FUNCTION(sc_abort, TYPE_NoReturn);
@@ -2403,48 +2411,51 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_hash2x64, TYPE_U64, TYPE_U64, TYPE_U64);
     DEFINE_EXTERN_C_FUNCTION(sc_hashbytes, TYPE_U64, native_ro_pointer_type(TYPE_I8), TYPE_USize);
 
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_import_c, TYPE_Scope, TYPE_String, TYPE_String, TYPE_List, TYPE_Scope);
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_load_library, _void, TYPE_String);
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_load_object, _void, TYPE_String);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_import_c, TYPE_Scope, TYPE_GlobalStringRef, TYPE_GlobalStringRef, TYPE_List, TYPE_Scope);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_load_library, _void, TYPE_GlobalStringRef);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_load_object, _void, TYPE_GlobalStringRef);
 
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_scope_at, TYPE_ValueRef, TYPE_Scope, TYPE_ValueRef);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_scope_local_at, TYPE_ValueRef, TYPE_Scope, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_scope_module_docstring, TYPE_String, TYPE_Scope);
-    DEFINE_EXTERN_C_FUNCTION(sc_scope_docstring, TYPE_String, TYPE_Scope, TYPE_ValueRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_scope_module_docstring, TYPE_GlobalStringRef, TYPE_Scope);
+    DEFINE_EXTERN_C_FUNCTION(sc_scope_docstring, TYPE_GlobalStringRef, TYPE_Scope, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_bind, TYPE_Scope, TYPE_Scope, TYPE_ValueRef, TYPE_ValueRef);
-    DEFINE_EXTERN_C_FUNCTION(sc_scope_bind_with_docstring, TYPE_Scope, TYPE_Scope, TYPE_ValueRef, TYPE_ValueRef, TYPE_String);
+    DEFINE_EXTERN_C_FUNCTION(sc_scope_bind_with_docstring, TYPE_Scope, TYPE_Scope, TYPE_ValueRef, TYPE_ValueRef, TYPE_GlobalStringRef);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_new, TYPE_Scope);
-    DEFINE_EXTERN_C_FUNCTION(sc_scope_new_with_docstring, TYPE_Scope, TYPE_String);
+    DEFINE_EXTERN_C_FUNCTION(sc_scope_new_with_docstring, TYPE_Scope, TYPE_GlobalStringRef);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_reparent, TYPE_Scope, TYPE_Scope, TYPE_Scope);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_unparent, TYPE_Scope, TYPE_Scope);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_new_subscope, TYPE_Scope, TYPE_Scope);
-    DEFINE_EXTERN_C_FUNCTION(sc_scope_new_subscope_with_docstring, TYPE_Scope, TYPE_Scope, TYPE_String);
+    DEFINE_EXTERN_C_FUNCTION(sc_scope_new_subscope_with_docstring, TYPE_Scope, TYPE_Scope, TYPE_GlobalStringRef);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_get_parent, TYPE_Scope, TYPE_Scope);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_unbind, TYPE_Scope, TYPE_Scope, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_next, arguments_type({TYPE_ValueRef, TYPE_ValueRef, TYPE_I32}), TYPE_Scope, TYPE_I32);
     DEFINE_EXTERN_C_FUNCTION(sc_scope_next_deleted, arguments_type({TYPE_ValueRef, TYPE_I32}), TYPE_Scope, TYPE_I32);
 
-    DEFINE_EXTERN_C_FUNCTION(sc_symbol_new, TYPE_Symbol, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_symbol_new_unique, TYPE_Symbol, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_symbol_to_string, TYPE_String, TYPE_Symbol);
+    DEFINE_EXTERN_C_FUNCTION(sc_symbol_new, TYPE_Symbol, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_symbol_new_unique, TYPE_Symbol, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_symbol_to_string, TYPE_GlobalStringRef, TYPE_Symbol);
     DEFINE_EXTERN_C_FUNCTION(sc_symbol_is_variadic, TYPE_Bool, TYPE_Symbol);
     DEFINE_EXTERN_C_FUNCTION(sc_symbol_count, TYPE_USize);
     DEFINE_EXTERN_C_FUNCTION(sc_symbol_style, TYPE_Symbol, TYPE_Symbol);
 
-    DEFINE_EXTERN_C_FUNCTION(sc_string_new, TYPE_String, native_ro_pointer_type(TYPE_I8), TYPE_USize);
-    DEFINE_EXTERN_C_FUNCTION(sc_string_new_from_cstr, TYPE_String, native_ro_pointer_type(TYPE_I8));
-    DEFINE_EXTERN_C_FUNCTION(sc_string_join, TYPE_String, TYPE_String, TYPE_String);
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_string_match, arguments_type({TYPE_Bool, TYPE_I32, TYPE_I32}), TYPE_String, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_string_count, TYPE_USize, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_string_compare, TYPE_I32, TYPE_String, TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_string_buffer, arguments_type({rawstring, TYPE_USize}), TYPE_String);
-    DEFINE_EXTERN_C_FUNCTION(sc_string_lslice, TYPE_String, TYPE_String, TYPE_USize);
-    DEFINE_EXTERN_C_FUNCTION(sc_string_rslice, TYPE_String, TYPE_String, TYPE_USize);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_new, TYPE_GlobalStringRef, native_ro_pointer_type(TYPE_I8), TYPE_USize);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_new_from_cstr, TYPE_GlobalStringRef, native_ro_pointer_type(TYPE_I8));
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_count, TYPE_USize, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_buffer, arguments_type({rawstring, TYPE_USize}), TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_tag, TYPE_GlobalStringRef, TYPE_Anchor, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_join, TYPE_GlobalStringRef, TYPE_GlobalStringRef, TYPE_GlobalStringRef);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_globalstring_match, arguments_type({TYPE_Bool, TYPE_I32, TYPE_I32}), TYPE_GlobalStringRef, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_compare, TYPE_I32, TYPE_GlobalStringRef, TYPE_GlobalStringRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_lslice, TYPE_GlobalStringRef, TYPE_GlobalStringRef, TYPE_USize);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_rslice, TYPE_GlobalStringRef, TYPE_GlobalStringRef, TYPE_USize);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_value_globalstring, TYPE_GlobalStringRef, TYPE_ValueRef);
+    DEFINE_EXTERN_C_FUNCTION(sc_globalstring_value, TYPE_ValueRef, TYPE_GlobalStringRef);
 
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_type_at, TYPE_ValueRef, TYPE_Type, TYPE_Symbol);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_type_local_at, TYPE_ValueRef, TYPE_Type, TYPE_Symbol);
-    DEFINE_EXTERN_C_FUNCTION(sc_type_get_docstring, TYPE_String, TYPE_Type, TYPE_Symbol);
-    DEFINE_EXTERN_C_FUNCTION(sc_type_set_docstring, _void, TYPE_Type, TYPE_Symbol, TYPE_String);
+    DEFINE_EXTERN_C_FUNCTION(sc_type_get_docstring, TYPE_GlobalStringRef, TYPE_Type, TYPE_Symbol);
+    DEFINE_EXTERN_C_FUNCTION(sc_type_set_docstring, _void, TYPE_Type, TYPE_Symbol, TYPE_GlobalStringRef);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_type_element_at, TYPE_Type, TYPE_Type, TYPE_I32);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_type_field_index, TYPE_I32, TYPE_Type, TYPE_Symbol);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_type_field_name, TYPE_Symbol, TYPE_Type, TYPE_I32);
@@ -2460,7 +2471,7 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_type_is_superof, TYPE_Bool, TYPE_Type, TYPE_Type);
     DEFINE_EXTERN_C_FUNCTION(sc_type_compatible, TYPE_Bool, TYPE_Type, TYPE_Type);
     DEFINE_EXTERN_C_FUNCTION(sc_type_is_default_suffix, TYPE_Bool, TYPE_Type);
-    DEFINE_EXTERN_C_FUNCTION(sc_type_string, TYPE_String, TYPE_Type);
+    DEFINE_EXTERN_C_FUNCTION(sc_type_string, TYPE_GlobalStringRef, TYPE_Type);
     DEFINE_EXTERN_C_FUNCTION(sc_type_next, arguments_type({TYPE_Symbol, TYPE_ValueRef}), TYPE_Type, TYPE_Symbol);
     DEFINE_EXTERN_C_FUNCTION(sc_type_set_symbol, _void, TYPE_Type, TYPE_Symbol, TYPE_ValueRef);
     DEFINE_EXTERN_C_FUNCTION(sc_type_is_refer, TYPE_Bool, TYPE_Type);
@@ -2480,7 +2491,7 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_integer_type, TYPE_Type, TYPE_I32, TYPE_Bool);
     DEFINE_EXTERN_C_FUNCTION(sc_integer_type_is_signed, TYPE_Bool, TYPE_Type);
 
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typename_type, TYPE_Type, TYPE_String, TYPE_Type);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typename_type, TYPE_Type, TYPE_GlobalStringRef, TYPE_Type);
     DEFINE_EXTERN_C_FUNCTION(sc_typename_type_get_super, TYPE_Type, TYPE_Type);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typename_type_set_storage, _void, TYPE_Type, TYPE_Type, TYPE_U32);
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typename_type_set_opaque, _void, TYPE_Type);
@@ -2519,8 +2530,8 @@ void init_globals(int argc, char *argv[]) {
 
     DEFINE_EXTERN_C_FUNCTION(sc_list_cons, TYPE_List, TYPE_ValueRef, TYPE_List);
     DEFINE_EXTERN_C_FUNCTION(sc_list_dump, TYPE_List, TYPE_List);
-    DEFINE_EXTERN_C_FUNCTION(sc_list_repr, TYPE_String, TYPE_List);
-    DEFINE_EXTERN_C_FUNCTION(sc_list_serialize, TYPE_String, TYPE_List);
+    DEFINE_EXTERN_C_FUNCTION(sc_list_repr, TYPE_GlobalStringRef, TYPE_List);
+    DEFINE_EXTERN_C_FUNCTION(sc_list_serialize, TYPE_GlobalStringRef, TYPE_List);
     DEFINE_EXTERN_C_FUNCTION(sc_list_join, TYPE_List, TYPE_List, TYPE_List);
     DEFINE_EXTERN_C_FUNCTION(sc_list_decons, arguments_type({TYPE_ValueRef, TYPE_List}), TYPE_List);
     DEFINE_EXTERN_C_FUNCTION(sc_list_count, TYPE_I32, TYPE_List);
@@ -2534,12 +2545,12 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_EXTERN_C_FUNCTION(sc_anchor_column, TYPE_I32, TYPE_Anchor);
     DEFINE_EXTERN_C_FUNCTION(sc_anchor_offset, TYPE_Anchor, TYPE_Anchor, TYPE_I32);
 
-    DEFINE_EXTERN_C_FUNCTION(sc_closure_get_docstring, TYPE_String, TYPE_Closure);
+    DEFINE_EXTERN_C_FUNCTION(sc_closure_get_docstring, TYPE_GlobalStringRef, TYPE_Closure);
     DEFINE_EXTERN_C_FUNCTION(sc_closure_get_template, TYPE_ValueRef, TYPE_Closure);
     DEFINE_EXTERN_C_FUNCTION(sc_closure_get_context, TYPE_ValueRef, TYPE_Closure);
 
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_parse_from_path, TYPE_ValueRef, TYPE_String);
-    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_parse_from_string, TYPE_ValueRef, TYPE_String);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_parse_from_path, TYPE_ValueRef, TYPE_GlobalStringRef);
+    DEFINE_RAISING_EXTERN_C_FUNCTION(sc_parse_from_string, TYPE_ValueRef, TYPE_GlobalStringRef);
 
 #undef DEFINE_EXTERN_C_FUNCTION
 
@@ -2568,18 +2579,15 @@ void init_globals(int argc, char *argv[]) {
     bind_new_value(KW_None, ConstAggregate::none_from());
     bind_symbol(Symbol("unnamed"), Symbol(SYM_Unnamed));
     bind_new_value(SYM_CacheDir,
-        ConstPointer::string_from(String::from_cstr(get_cache_dir())));
+        GlobalString::from_cstr(get_cache_dir()));
     bind_new_value(SYM_CompilerDir,
-        ConstPointer::string_from(
-            String::from(scopes_compiler_dir, strlen(scopes_compiler_dir))));
+        GlobalString::from_stdstring(compiler_dir));
     bind_new_value(SYM_CompilerPath,
-        ConstPointer::string_from(
-            String::from(scopes_compiler_path, strlen(scopes_compiler_path))));
+        GlobalString::from_stdstring(compiler_path));
     bind_new_value(SYM_DebugBuild,
         ConstInt::from(TYPE_Bool, scopes_is_debug()));
     bind_new_value(SYM_CompilerTimestamp,
-        ConstPointer::string_from(
-            String::from_cstr(scopes_compile_time_date())));
+        GlobalString::from_cstr(scopes_compile_time_date()));
 
 #define T(NAME, STR) \
     bind_symbol(Symbol(NAME), Symbol(NAME));

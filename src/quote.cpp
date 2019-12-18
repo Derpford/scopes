@@ -24,8 +24,7 @@
 #include "globals.hpp"
 #include "anchor.hpp"
 #include "scopes/scopes.h"
-
-
+#include "qualifier/refer_qualifier.hpp"
 
 //#pragma GCC diagnostic ignored "-Wvla-extension"
 
@@ -292,8 +291,13 @@ struct Quoter {
     }
 
     ValueRef quote_typed(const TypedValueRef &node) {
-        if (node->get_type() == TYPE_ValueRef)
+        auto T = node->get_type();
+        if (T == TYPE_ValueRef)
             return node;
+        if (T == TYPE_GlobalStringRef) {
+            auto _anchor = node.anchor();
+            return REF(CallTemplate::from(g_sc_globalstring_value, { node }));
+        }
         if (node.isa<ArgumentList>()) {
             return quote_typed_argument_list(node.cast<ArgumentList>());
         } else {
@@ -562,6 +566,7 @@ ValueRef wrap_value(const Type *T, const ValueRef &value) {
         return ConstAggregate::ast_from(value);
     }
     if (!is_opaque(T)) {
+        bool is_refer = is_reference(T);
         T = strip_qualifiers(T);
         auto ST = storage_type(T).assert_ok();
         auto kind = ST->kind();
@@ -636,30 +641,50 @@ ValueRef wrap_value(const Type *T, const ValueRef &value) {
         } break;
         case TK_Array: {
             auto at = cast<ArrayType>(ST);
-            auto result = REF(Expression::unscoped_from());
             auto ET = at->element_type;
             auto numvals = (int)at->count;
-            auto numelems = REF(ConstInt::from(TYPE_I32, numvals));
-            auto buf = REF(CallTemplate::from(g_alloca_array, {
-                    REF(ConstPointer::type_from(TYPE_ValueRef)),
-                    numelems
-                }));
-            result->append(buf);
-            for (int i = 0; i < numvals; ++i) {
-                auto idx = REF(ConstInt::from(TYPE_I32, i));
-                auto arg =
-                    REF(CallTemplate::from(g_extractvalue, { value, idx }));
-                auto wrapped_arg = wrap_value(ET, arg);
-                assert(wrapped_arg);
-                result->append(
-                    REF(CallTemplate::from(g_store, {
-                        wrapped_arg,
-                        REF(CallTemplate::from(g_getelementptr, { buf, idx }))
-                    })));
+            if (ET == TYPE_I8) {
+                if (is_refer) {
+                    if (value.isa<GlobalString>())
+                        return value;
+                    auto result = REF(Expression::unscoped_from());
+                    auto PT = native_ro_pointer_type(ET);
+                    auto ptr = REF(CallTemplate::from(g_bitcast, {
+                        REF(CallTemplate::from(g_reftoptr, { value })),
+                        REF(ConstPointer::type_from(PT)) }));
+                    result->append(ptr);
+                    result->append(
+                        REF(CallTemplate::from(g_sc_globalstring_new, {
+                            ptr,
+                            REF(ConstInt::from(TYPE_USize, numvals)) })));
+                    return result;
+                } else {
+                    assert(false && "todo");
+                }
+            } else {
+                auto result = REF(Expression::unscoped_from());
+                auto numelems = REF(ConstInt::from(TYPE_I32, numvals));
+                auto buf = REF(CallTemplate::from(g_alloca_array, {
+                        REF(ConstPointer::type_from(TYPE_ValueRef)),
+                        numelems
+                    }));
+                result->append(buf);
+                for (int i = 0; i < numvals; ++i) {
+                    auto idx = REF(ConstInt::from(TYPE_I32, i));
+                    auto arg =
+                        REF(CallTemplate::from(g_extractvalue, { value, idx }));
+                    auto wrapped_arg = wrap_value(ET, arg);
+                    assert(wrapped_arg);
+                    result->append(
+                        REF(CallTemplate::from(g_store, {
+                            wrapped_arg,
+                            REF(CallTemplate::from(g_getelementptr, { buf, idx }))
+                        })));
+                }
+                result->append(REF(CallTemplate::from(g_sc_const_aggregate_new,
+                    { REF(ConstPointer::type_from(T)), numelems, buf })));
+                return result;
             }
-            result->append(REF(CallTemplate::from(g_sc_const_aggregate_new,
-                { REF(ConstPointer::type_from(T)), numelems, buf })));
-            return result;
         } break;
         case TK_Tuple: {
             auto tt = cast<TupleType>(ST);

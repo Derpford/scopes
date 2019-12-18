@@ -5,6 +5,8 @@
 */
 
 #include "source_file.hpp"
+#include "value.hpp"
+#include "styled_stream.hpp"
 
 #ifdef SCOPES_WIN32
 #include "mman.h"
@@ -62,7 +64,7 @@ const char *SourceFile::strptr() {
 
 std::unique_ptr<SourceFile> SourceFile::from_file(Symbol _path) {
     auto file = std::unique_ptr<SourceFile>(new SourceFile(_path));
-    file->fd = ::open(_path.name()->data, O_RDONLY);
+    file->fd = ::open(_path.name().c_str(), O_RDONLY);
     if (file->fd >= 0) {
         file->length = lseek(file->fd, 0, SEEK_END);
         file->ptr = mmap(nullptr,
@@ -76,11 +78,11 @@ std::unique_ptr<SourceFile> SourceFile::from_file(Symbol _path) {
     return nullptr;
 }
 
-std::unique_ptr<SourceFile> SourceFile::from_string(Symbol _path, const String *str) {
+std::unique_ptr<SourceFile> SourceFile::from_string(Symbol _path, const GlobalString *str) {
     SourceFile *file = new SourceFile(_path);
     // loading from string buffer rather than file
-    file->ptr = (void *)str->data;
-    file->length = str->count;
+    file->ptr = (void *)str->value.c_str();
+    file->length = str->value.size();
     file->_str = str;
     return std::unique_ptr<SourceFile>(file);
 }

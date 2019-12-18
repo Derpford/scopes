@@ -25,13 +25,11 @@ enum TypenameFlags {
 //------------------------------------------------------------------------------
 
 struct TypenameType : Type {
-    static std::unordered_set<Symbol, Symbol::Hash> used_names;
-
     void stream_name(StyledStream &ss) const;
-    const String *name() const;
+    const std::string &name() const;
     static bool classof(const Type *T);
 
-    TypenameType(const String *name, const Type *super_type);
+    TypenameType(const std::string &name, const Type *super_type);
 
     SCOPES_RESULT(void) complete() const;
     SCOPES_RESULT(void) complete(const Type *_type, uint32_t flags) const;
@@ -47,15 +45,15 @@ struct TypenameType : Type {
 protected:
     mutable const Type *storage_type;
     const Type *super_type;
-    const String *_name;
+    const std::string _name;
     mutable uint32_t flags;
 };
 
 // always generates a new type
-const TypenameType *incomplete_typename_type(const String *name, const Type *supertype);
-const TypenameType *opaque_typename_type(const String *name, const Type *supertype);
-SCOPES_RESULT(const TypenameType *) plain_typename_type(const String *name, const Type *supertype, const Type *storage_type);
-SCOPES_RESULT(const TypenameType *) unique_typename_type(const String *name, const Type *supertype, const Type *storage_type);
+const TypenameType *incomplete_typename_type(const std::string &name, const Type *supertype);
+const TypenameType *opaque_typename_type(const std::string &name, const Type *supertype);
+SCOPES_RESULT(const TypenameType *) plain_typename_type(const std::string &name, const Type *supertype, const Type *storage_type);
+SCOPES_RESULT(const TypenameType *) unique_typename_type(const std::string &name, const Type *supertype, const Type *storage_type);
 
 SCOPES_RESULT(const Type *) storage_type(const Type *T);
 

@@ -8,6 +8,7 @@
 #include "types.hpp"
 #include "utils.hpp"
 #include "dyn_cast.inc"
+#include "styled_stream.hpp"
 
 #include <assert.h>
 

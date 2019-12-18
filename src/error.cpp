@@ -65,8 +65,8 @@ template<> struct ArgFormatter<const char *> {
     void value(StyledStream &ss, const char *arg) { ss << arg; }
 };
 
-template<> struct ArgFormatter<const String *> {
-    void value(StyledStream &ss, const String *arg) { ss << arg->data; }
+template<> struct ArgFormatter<std::string> {
+    void value(StyledStream &ss, const std::string &arg) { ss << arg; }
 };
 
 template<> struct ArgFormatter<const Type *> {
@@ -82,7 +82,7 @@ template<> struct ArgFormatter<char> {
 };
 
 template<> struct ArgFormatter<Symbol> {
-    void value(StyledStream &ss, Symbol arg) { ss << arg.name()->data; }
+    void value(StyledStream &ss, Symbol arg) { ss << arg.name(); }
 };
 
 template<> struct ArgFormatter<Builtin> {
@@ -176,63 +176,63 @@ static std::vector<Symbol> find_closest_match(Symbol name, const Symbols &symbol
 
 static void print_name_suggestions(StyledStream &ss, const Symbols &syms) {
     if (syms.empty()) return;
-    ss << ". Did you mean '" << syms[0].name()->data << "'";
+    ss << ". Did you mean '" << syms[0].name() << "'";
     for (size_t i = 1; i < syms.size(); ++i) {
         if ((i + 1) == syms.size()) {
             ss << " or ";
         } else {
             ss << ", ";
         }
-        ss << "'" << syms[i].name()->data << "'";
+        ss << "'" << syms[i].name() << "'";
     }
     ss << "?";
 }
 
 static void print_all_suggestions(StyledStream &ss, const Symbols &syms) {
     if (syms.empty()) return;
-    ss << ". Try '" << syms[0].name()->data << "'";
+    ss << ". Try '" << syms[0].name() << "'";
     for (size_t i = 1; i < syms.size(); ++i) {
         if ((i + 1) == syms.size()) {
             ss << " or ";
         } else {
             ss << ", ";
         }
-        ss << "'" << syms[i].name()->data << "'";
+        ss << "'" << syms[i].name() << "'";
     }
 }
 
 static void syntax_undeclared_identifier_print_suggestions(StyledStream &ss, Symbol symbol, PScope scope) {
-    ss << "syntax: identifier '" << symbol.name()->data;
+    ss << "syntax: identifier '" << symbol.name();
     ss << "' is not declared in scope";
     print_name_suggestions(ss, scope->find_closest_match(symbol));
 }
 
 static void unknown_parameter_key_print_suggestions(StyledStream &ss, Symbol symbol, const Symbols &symbols) {
-    ss << "no parameter named '" << symbol.name()->data;
+    ss << "no parameter named '" << symbol.name();
     ss << "' in function";
     print_all_suggestions(ss, symbols);
 }
 
 static void rt_missing_scope_attribute_print_suggestions(StyledStream &ss, Symbol symbol, PScope scope) {
-    ss << "runtime: no attribute named '" << symbol.name()->data;
+    ss << "runtime: no attribute named '" << symbol.name();
     ss << "' in scope";
     print_name_suggestions(ss, scope->find_closest_match(symbol));
 }
 
 static void rt_missing_type_attribute_print_suggestions(StyledStream &ss, Symbol symbol, PType type) {
-    ss << "runtime: no attribute named '" << symbol.name()->data;
+    ss << "runtime: no attribute named '" << symbol.name();
     ss << "' in type " << type;
     print_name_suggestions(ss, type->find_closest_match(symbol));
 }
 
 static void missing_tuple_field_print_suggestions(StyledStream &ss, Symbol symbol, PType type) {
-    ss << "no field named '" << symbol.name()->data;
+    ss << "no field named '" << symbol.name();
     ss << "' in tuple " << type;
     print_name_suggestions(ss, cast<TupleType>(type)->find_closest_field_match(symbol));
 }
 
 static void rt_missing_tuple_field_print_suggestions(StyledStream &ss, Symbol symbol, PType type) {
-    ss << "runtime: no field named '" << symbol.name()->data;
+    ss << "runtime: no field named '" << symbol.name();
     ss << "' in tuple " << type;
     print_name_suggestions(ss, cast<TupleType>(type)->find_closest_field_match(symbol));
 }
@@ -338,7 +338,7 @@ void stream_backtrace(StyledStream &ss, const Backtrace *bt) {
         }
         ss << Style_None << " ";
         ss << Style_Function;
-        ss << templ->name.name()->data;
+        ss << templ->name.name();
         ss << Style_None;
         ss << std::endl;
         anchor->stream_source_line(ss);
@@ -374,8 +374,9 @@ void stream_backtrace(StyledStream &ss, const Backtrace *bt) {
     } break;
     case BTK_User: {
         ss << anchor;
-        if (try_get_const_type(value) == TYPE_String) {
-            ss << " " << extract_string_constant(value).assert_ok()->data;
+        auto str = try_extract_string(value);
+        if (str) {
+            ss << " " << str->value;
         } else {
             ss << " while executing";
         }
@@ -402,7 +403,7 @@ void stream_backtrace(StyledStream &ss, const Backtrace *bt) {
     case BTK_ConvertForeignType: {
         ss << anchor;
         ss << " while converting foreign type ";
-        ss << extract_string_constant(value).assert_ok()->data;
+        ss << extract_string_constant(value).assert_ok()->value;
         ss << std::endl;
         anchor->stream_source_line(ss);
     } break;

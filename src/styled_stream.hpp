@@ -56,11 +56,8 @@ struct StyledStream {
     static StyledStream plain(OStream &ost);
     static StyledStream plain(StyledStream &ost);
 
-#if SCOPES_USE_WCHAR
     StyledStream& operator<<(const char * const s);
     StyledStream& operator<<(const std::string &s);
-
-#endif
 
     template<typename T>
     StyledStream& operator<<(const T &o) { _ost << o; return *this; }
@@ -139,7 +136,6 @@ StyledStream& operator<<(StyledStream& ss, const Closure *closure);
 StyledStream& operator<<(StyledStream& ost, const List *list);
 StyledStream& operator<<(StyledStream& ost, const Nothing &value);
 StyledStream& operator<<(StyledStream& ost, const Scope *scope);
-StyledStream& operator<<(StyledStream& ost, const String *s);
 StyledStream& operator<<(StyledStream& ost, const Syntax *value);
 StyledStream& operator<<(StyledStream& ost, const Type *type);
 StyledStream& operator<<(StyledStream& ost, const ValueIndex &arg);
@@ -159,7 +155,7 @@ StyledStream& operator<<(StyledStream& ost, TValueRef<T> value) {
 
 void stream_uid(StyledStream &ss, uint64_t uid);
 void stream_address(StyledStream &ss, const void *ptr);
-void set_address_name(const void *ptr, const String *name);
+void set_address_name(const void *ptr, const std::string &name);
 
 } // namespace scopes
 

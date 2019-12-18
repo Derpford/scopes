@@ -14,6 +14,7 @@
 #include "dyn_cast.inc"
 #include "qualifier.inc"
 #include "qualifiers.hpp"
+#include "string.hpp"
 
 #include <memory.h>
 #include <algorithm>
@@ -37,7 +38,7 @@ StyledStream& Type::stream(StyledStream& ost) const {
     StyledString ss = StyledString::plain();
     stream_type_name(ss.out, this);
     ost << Style_Type;
-    ost << ss.str()->data;
+    ost << ss.str();
     ost << Style_None;
     return ost;
 }
@@ -47,7 +48,7 @@ void Type::bind_with_doc(Symbol name, const TypeEntry &entry) const {
 }
 
 void Type::bind(Symbol name, const ValueRef &value) const {
-    TypeEntry entry = { value, nullptr };
+    TypeEntry entry = { value, GlobalStringRef() };
     bind_with_doc(name, entry);
 }
 
@@ -119,7 +120,7 @@ const Type::Map &Type::get_symbols() const {
 }
 
 std::vector<Symbol> Type::find_closest_match(Symbol name) const {
-    const String *s = name.name();
+    auto &&s = name.name();
     std::unordered_set<Symbol, Symbol::Hash> done;
     std::vector<Symbol> best_syms;
     size_t best_dist = (size_t)-1;
@@ -399,25 +400,25 @@ SCOPES_RESULT(void) verify_range(size_t idx, size_t count) {
 //------------------------------------------------------------------------------
 
 #define DEFINE_OPAQUE_TYPENAME(NAME, T, SUPERT) \
-    T = opaque_typename_type(String::from(NAME), SUPERT);
+    T = opaque_typename_type(NAME, SUPERT);
 
 #define DEFINE_BASIC_TYPE(NAME, CT, T, SUPERT, BODY) { \
-        auto tn = plain_typename_type(String::from(NAME), SUPERT, BODY).assert_ok(); \
+        auto tn = plain_typename_type(NAME, SUPERT, BODY).assert_ok(); \
         assert(sizeof(CT) == size_of(tn).assert_ok()); \
         T = tn; \
     }
 
 #define DEFINE_OPAQUE_HANDLE_TYPE(NAME, CT, T, SUPERT) { \
-        auto tn = plain_typename_type(String::from(NAME), SUPERT, \
+        auto tn = plain_typename_type(NAME, SUPERT, \
             native_opaque_pointer_type( \
-                opaque_typename_type(String::from("_" NAME), nullptr))).assert_ok(); \
+                opaque_typename_type("_" NAME, nullptr))).assert_ok(); \
         T = tn; \
     }
 
 void init_types() {
     DEFINE_OPAQUE_TYPENAME("typename", TYPE_Typename, nullptr);
 
-    TYPE_Nothing = incomplete_typename_type(String::from("Nothing"), nullptr);
+    TYPE_Nothing = incomplete_typename_type("Nothing", nullptr);
     DEFINE_OPAQUE_TYPENAME("noreturn", TYPE_NoReturn, nullptr);
 
     DEFINE_OPAQUE_TYPENAME("immutable", TYPE_Immutable, nullptr);
@@ -466,21 +467,21 @@ void init_types() {
 
     DEFINE_BASIC_TYPE("usize", size_t, TYPE_USize, TYPE_Integer, TYPE_U64);
 
-    const Type *_TypePtr = native_ro_pointer_type(opaque_typename_type(String::from("_type"),nullptr));
-    TYPE_Type = plain_typename_type(String::from("type"), TYPE_OpaquePointer, _TypePtr).assert_ok();
-    TYPE_Unknown = plain_typename_type(String::from("Unknown"), nullptr, _TypePtr).assert_ok();
-    TYPE_Variadic = opaque_typename_type(String::from("..."), nullptr);
+    const Type *_TypePtr = native_ro_pointer_type(opaque_typename_type("_type",nullptr));
+    TYPE_Type = plain_typename_type("type", TYPE_OpaquePointer, _TypePtr).assert_ok();
+    TYPE_Unknown = plain_typename_type("Unknown", nullptr, _TypePtr).assert_ok();
+    TYPE_Variadic = opaque_typename_type("...", nullptr);
     cast<TypenameType>(TYPE_Nothing)->complete(tuple_type({}).assert_ok(), TNF_Plain).assert_ok();
 
     DEFINE_BASIC_TYPE("Symbol", Symbol, TYPE_Symbol, TYPE_Immutable, TYPE_U64);
     DEFINE_BASIC_TYPE("Builtin", Builtin, TYPE_Builtin, nullptr, TYPE_U64);
 
     DEFINE_OPAQUE_HANDLE_TYPE("_Value", Value, TYPE__Value, nullptr);
+    DEFINE_OPAQUE_HANDLE_TYPE("_GlobalString", GlobalString, TYPE__GlobalString, nullptr);
 
     DEFINE_OPAQUE_HANDLE_TYPE("SourceFile", SourceFile, TYPE_SourceFile, nullptr);
     DEFINE_OPAQUE_HANDLE_TYPE("Closure", Closure, TYPE_Closure, nullptr);
     DEFINE_OPAQUE_HANDLE_TYPE("Scope", Scope, TYPE_Scope, nullptr);
-    DEFINE_OPAQUE_HANDLE_TYPE("String", String, TYPE_String, TYPE_OpaquePointer);
     DEFINE_OPAQUE_HANDLE_TYPE("List", List, TYPE_List, nullptr);
     DEFINE_OPAQUE_HANDLE_TYPE("Error", Error, TYPE_Error, nullptr);
 
@@ -489,6 +490,9 @@ void init_types() {
 
     DEFINE_BASIC_TYPE("Value", ValueRef, TYPE_ValueRef, nullptr,
         tuple_type({ TYPE__Value, TYPE_Anchor }).assert_ok());
+
+    DEFINE_BASIC_TYPE("GlobalString", GlobalStringRef, TYPE_GlobalStringRef, nullptr,
+        tuple_type({ TYPE__GlobalString, TYPE_Anchor }).assert_ok());
 
     DEFINE_BASIC_TYPE("CompileStage", ValueRef, TYPE_CompileStage,
         nullptr, storage_type(TYPE_ValueRef).assert_ok());

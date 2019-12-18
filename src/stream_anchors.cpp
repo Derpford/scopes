@@ -22,7 +22,7 @@ void StreamAnchors::stream_anchor(const Anchor *anchor, bool quoted) {
         auto rss = StyledStream::plain(ss);
         // ss << path.name()->data << ":" << lineno << ":" << column << ":";
         if (!last_anchor || (last_anchor->path != anchor->path)) {
-            rss << anchor->path.name()->data
+            rss << anchor->path.name()
                 << ":" << anchor->lineno
                 << ":" << anchor->column
                 << ":";

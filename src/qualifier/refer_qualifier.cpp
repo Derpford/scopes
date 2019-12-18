@@ -8,6 +8,7 @@
 #include "../type/pointer_type.hpp"
 #include "../hash.hpp"
 #include "../qualifier.inc"
+#include "../styled_stream.hpp"
 
 #include <assert.h>
 
@@ -53,7 +54,7 @@ void ReferQualifier::stream_postfix(StyledStream &ss) const {
         ss << "<&>";
     }
     if (storage_class != SYM_Unnamed) {
-        ss << "[" << storage_class.name()->data << "]";
+        ss << "[" << storage_class.name() << "]";
     }
 }
 

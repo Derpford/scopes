@@ -19,6 +19,8 @@
 #include "types.hpp"
 #include "gen_llvm.hpp"
 #include "compiler_flags.hpp"
+#include "styled_stream.hpp"
+#include "string.hpp"
 
 #include "scopes/scopes.h"
 
@@ -42,6 +44,13 @@
 #include "llvm/ExecutionEngine/SectionMemoryManager.h"
 
 namespace scopes {
+
+std::string compiler_path;
+std::string compiler_dir;
+std::string clang_include_dir;
+std::string include_dir;
+size_t compiler_argc = 0;
+char **compiler_argv = nullptr;
 
 static Timer *main_compile_time = nullptr;
 void on_startup() {
@@ -79,7 +88,7 @@ SCOPES_RESULT(ValueRef) load_custom_core(const char *executable_path) {
     SCOPES_RESULT_TYPE(ValueRef);
     // attempt to read bootstrap expression from end of binary
     auto file = SourceFile::from_file(
-        Symbol(String::from_cstr(executable_path)));
+        Symbol(executable_path));
     if (!file) {
         SCOPES_ERROR(MainInaccessibleBinary);
     }
@@ -206,29 +215,25 @@ void init(void *c_main, int argc, char *argv[]) {
     init_llvm();
 
     setup_stdio();
-    scopes_argc = argc;
-    scopes_argv = argv;
+    compiler_argc = argc;
+    compiler_argv = argv;
 
     std::string exepath = llvm::sys::fs::getMainExecutable(argv[0], c_main);
 
-    scopes_compiler_path = nullptr;
-    scopes_compiler_dir = nullptr;
-    scopes_clang_include_dir = nullptr;
-    scopes_include_dir = nullptr;
+    compiler_path = "";
+    compiler_dir = "";
+    clang_include_dir = "";
+    include_dir = "";
     if (argv) {
         if (argv[0]) {
-            std::string loader = exepath;
-            // string must be kept resident
-            scopes_compiler_path = strdup(loader.c_str());
-        } else {
-            scopes_compiler_path = strdup("");
+            compiler_path = exepath;
         }
 
-        char *path_copy = strdup(scopes_compiler_path);
-        scopes_compiler_dir = format("%s/..", dirname(path_copy))->data;
+        char *path_copy = strdup(compiler_path.c_str());
+        compiler_dir = format("%s/..", dirname(path_copy));
         free(path_copy);
-        scopes_clang_include_dir = format("%s/lib/clang/include", scopes_compiler_dir)->data;
-        scopes_include_dir = format("%s/include", scopes_compiler_dir)->data;
+        clang_include_dir = format("%s/lib/clang/include", compiler_dir.c_str());
+        include_dir = format("%s/include", compiler_dir.c_str());
     }
 
     init_types();
@@ -239,7 +244,7 @@ SCOPES_RESULT(int) try_main() {
     SCOPES_RESULT_TYPE(int);
     using namespace scopes;
 
-    ValueRef expr = SCOPES_GET_RESULT(load_custom_core(scopes_compiler_path));
+    ValueRef expr = SCOPES_GET_RESULT(load_custom_core(compiler_path.c_str()));
     if (expr) {
         goto skip_regular_load;
     }
@@ -247,13 +252,12 @@ SCOPES_RESULT(int) try_main() {
     {
 #if 0
         Symbol name = format("%s/lib/scopes/%i.%i.%i/core.sc",
-            scopes_compiler_dir,
+            compiler_dir.c_str(),
             SCOPES_VERSION_MAJOR,
             SCOPES_VERSION_MINOR,
             SCOPES_VERSION_PATCH);
 #else
-        Symbol name = format("%s/lib/scopes/core.sc",
-            scopes_compiler_dir);
+        Symbol name = format("%s/lib/scopes/core.sc", compiler_dir.c_str());
 #endif
         auto sf = SourceFile::from_file(name);
         if (!sf) {

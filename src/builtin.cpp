@@ -5,6 +5,8 @@
 */
 
 #include "builtin.hpp"
+#include "styled_stream.hpp"
+#include "string.hpp"
 
 namespace scopes {
 
@@ -32,7 +34,7 @@ std::size_t Builtin::hash() const { return _name.hash(); }
 Symbol Builtin::name() const { return _name; }
 
 StyledStream& Builtin::stream(StyledStream& ost) const {
-    ost << Style_Function; name().name()->stream(ost, ""); ost << Style_None;
+    ost << Style_Function; stream_escaped(ost, name().name(), ""); ost << Style_None;
     return ost;
 }
 

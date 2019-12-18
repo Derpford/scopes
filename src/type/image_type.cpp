@@ -6,6 +6,7 @@
 
 #include "image_type.hpp"
 #include "../hash.hpp"
+#include "../styled_stream.hpp"
 
 #include <unordered_set>
 

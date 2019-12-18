@@ -10,6 +10,7 @@
 #include "../hash.hpp"
 #include "../dyn_cast.inc"
 #include "../qualifier.inc"
+#include "../styled_stream.hpp"
 
 #include <assert.h>
 
@@ -42,7 +43,7 @@ KeyQualifier::KeyQualifier(Symbol _key)
     : Qualifier((QualifierKind)Kind), key(_key) {}
 
 void KeyQualifier::stream_prefix(StyledStream &ss) const {
-    ss << key.name()->data << "=";
+    ss << key.name() << "=";
 }
 
 void KeyQualifier::stream_postfix(StyledStream &ss) const {

@@ -9,10 +9,13 @@
 
 #include "symbol.hpp"
 
+#include <memory>
+
 namespace scopes {
 
 struct StyledStream;
 struct SourceFile;
+struct GlobalString;
 
 //------------------------------------------------------------------------------
 // ANCHOR
@@ -20,20 +23,20 @@ struct SourceFile;
 
 struct Anchor {
 protected:
-    Anchor(Symbol _path, int _lineno, int _column, int _offset, const String *buffer);
+    Anchor(Symbol _path, int _lineno, int _column, int _offset, const GlobalString *buffer);
 
 public:
     Symbol path;
     int lineno;
     int column;
     int offset;
-    const String *buffer;
+    const GlobalString *buffer;
 
     bool is_boring() const;
     bool is_same(const Anchor *other) const;
 
     static const Anchor *from(
-        Symbol _path, int _lineno, int _column, int _offset = 0, const String *buffer = nullptr);
+        Symbol _path, int _lineno, int _column, int _offset = 0, const GlobalString *buffer = nullptr);
     static const Anchor *from(
         const std::unique_ptr<SourceFile> &file, int _lineno, int _column, int _offset = 0);
 

@@ -34,6 +34,7 @@ struct Anchor;
 struct List;
 struct Scope;
 struct Block;
+struct Closure;
 
 typedef std::vector<ParameterRef> Parameters;
 typedef std::vector<ParameterTemplateRef> ParameterTemplates;
@@ -293,7 +294,7 @@ struct Template : UntypedValue {
     ParameterTemplates params;
     ValueRef value;
     bool _is_inline;
-    const String *docstring;
+    GlobalStringRef docstring;
     int recursion;
     SCOPES_DEFINITION_ANCHOR_API()
 };
@@ -1163,7 +1164,7 @@ struct Function : Pure {
     Symbol name;
     Parameters params;
     Block body;
-    const String *docstring;
+    GlobalStringRef docstring;
     FunctionRef frame;
     FunctionRef boundary;
     TemplateRef original;
@@ -1267,12 +1268,29 @@ struct ConstPointer : Const {
     static ConstPointerRef from(const Type *type, const void *pointer);
     static ConstPointerRef type_from(const Type *type);
     static ConstPointerRef closure_from(const Closure *closure);
-    static ConstPointerRef string_from(const String *str);
     static ConstPointerRef list_from(const List *list);
     static ConstPointerRef scope_from(const Scope *scope);
     static ConstPointerRef anchor_from(const Anchor *anchor);
 
     const void *value;
+};
+
+//------------------------------------------------------------------------------
+
+struct GlobalString : Const {
+    static bool classof(const Value *T);
+
+    GlobalString(const char *_data, size_t _count);
+
+    bool key_equal(const GlobalString *other) const;
+    std::size_t hash() const;
+
+    static GlobalStringRef from(const char *_data, size_t _count);
+    static GlobalStringRef from_cstr(const char *_data);
+    static GlobalStringRef from_stdstring(const std::string &str);
+    static GlobalStringRef join(const GlobalStringRef &a, const GlobalStringRef &b);
+
+    std::string value;
 };
 
 //------------------------------------------------------------------------------
@@ -1319,21 +1337,6 @@ struct Global : Pure {
     int location = -1;
     int binding = -1;
     int descriptor_set = -1;
-};
-
-//------------------------------------------------------------------------------
-
-struct GlobalString : Pure {
-    static bool classof(const Value *T);
-
-    GlobalString(const char *_data, size_t _count);
-
-    bool key_equal(const GlobalString *other) const;
-    std::size_t hash() const;
-
-    static GlobalStringRef from(const char *_data, size_t _count);
-
-    std::string value;
 };
 
 //------------------------------------------------------------------------------

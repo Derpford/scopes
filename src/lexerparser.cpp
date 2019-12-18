@@ -13,6 +13,7 @@
 #include "value.hpp"
 #include "dyn_cast.inc"
 #include "globals.hpp"
+#include "string.hpp"
 
 #include "scopes/scopes.h"
 
@@ -513,7 +514,7 @@ SCOPES_RESULT(bool) LexerParser::select_integer_suffix() {
     } else {
         SCOPES_TRACE_PARSER(this->anchor());
         SCOPES_ERROR(ParserInvalidIntegerSuffix,
-            String::from(string, string_len));
+            std::string(string, string_len));
     }
     value = ref(value.anchor(),
         ConstInt::from(newtype, value.cast<ConstInt>()->value()));
@@ -531,7 +532,7 @@ SCOPES_RESULT(bool) LexerParser::select_real_suffix() {
     else {
         SCOPES_TRACE_PARSER(this->anchor());
         SCOPES_ERROR(ParserInvalidRealSuffix,
-            String::from(string, string_len));
+            std::string(string, string_len));
     }
     value = ref(value.anchor(),
         ConstReal::from(newtype, value.cast<ConstReal>()->value));
@@ -646,17 +647,17 @@ Symbol LexerParser::get_symbol() {
     memcpy(dest, string, string_len);
     dest[string_len] = 0;
     auto size = unescape_string(dest);
-    return Symbol(String::from(dest, size));
+    return Symbol(std::string(dest, size));
 }
-const String *LexerParser::get_string() {
+GlobalStringRef LexerParser::get_string() {
     auto len = string_len - 2;
     char dest[len + 1];
     memcpy(dest, string + 1, len);
     dest[len] = 0;
     auto size = unescape_string(dest);
-    return String::from(dest, size);
+    return GlobalString::from(dest, size);
 }
-const String *LexerParser::get_block_string() {
+GlobalStringRef LexerParser::get_block_string() {
     int strip_col = column() + 4;
     auto len = string_len - 4;
     assert(len >= 0);
@@ -686,7 +687,7 @@ const String *LexerParser::get_block_string() {
             }
         }
     }
-    return String::from(dest, p - dest);
+    return GlobalString::from(dest, p - dest);
 }
 ValueRef LexerParser::get_number() {
     return value;
@@ -797,9 +798,9 @@ SCOPES_RESULT(ValueRef) LexerParser::parse_any() {
         SCOPES_TRACE_PARSER(this->anchor());
         SCOPES_ERROR(ParserStrayClosingBracket);
     } else if (this->token == tok_string) {
-        return ValueRef(anchor, ConstPointer::string_from(get_string()));
+        return ValueRef(anchor, get_string());
     } else if (this->token == tok_block_string) {
-        return ValueRef(anchor, ConstPointer::string_from(get_block_string()));
+        return ValueRef(anchor, get_block_string());
     } else if (this->token == tok_symbol) {
         return ValueRef(anchor, ConstInt::symbol_from(get_symbol()));
     } else if (this->token == tok_number) {
