@@ -313,9 +313,9 @@ sc_globalstringref_t sc_default_styler(sc_symbol_t style, sc_globalstringref_t s
     using namespace scopes;
     StyledString ss;
     if (!style.is_known()) {
-        ss.out << str;
+        ss.out << str->value.c_str();
     } else {
-        ss.out << Style(style.known_value()) << str << Style_None;
+        ss.out << Style(style.known_value()) << str->value.c_str() << Style_None;
     }
     return GlobalString::from_stdstring(ss.str());
 }
