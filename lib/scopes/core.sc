@@ -2506,10 +2506,17 @@ let tostring =
             let argc = ('argcount args)
             verify-count argc 1 -1
             let value = ('getarg args 0)
+            let QT = ('qualified-typeof value)
             let T = ('typeof value)
             try
                 `([('@ T '__tostring)] value)
             except (err)
+                # string array references are converted directly
+                if ('refer? QT)
+                    if (icmp== ('kind T) type-kind-array)
+                        let ET = ('element@ T 0)
+                        if (ptrcmp== ET i8)
+                            return value
                 if ('constant? value)
                     `[(sc_value_tostring value)]
                 else
