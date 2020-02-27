@@ -242,8 +242,8 @@ typedef Map < Struct
         for i in (range 0:u64 (self._mask + 1:u64))
             if (valid-slot? self i)
                 unset-slot self i
-                drop (self._keys @ i)
-                drop (self._values @ i)
+                __drop (self._keys @ i)
+                __drop (self._values @ i)
         self._count = 0:u64
         self._mask = MinMask
         return;
@@ -327,14 +327,17 @@ typedef Map < Struct
             inline "fail" ()
                 return;
 
+    inline __tobool (self)
+        self._count != 0:usize
+
     inline __countof (self)
         (deref self._count) as usize
 
     fn __drop (self)
         for i in (range 0:u64 (self._mask + 1:u64))
             if (valid-slot? self i)
-                drop (self._keys @ i)
-                drop (self._values @ i)
+                __drop (self._keys @ i)
+                __drop (self._values @ i)
         free self._valid
         free self._keys
         free self._values
@@ -541,7 +544,7 @@ typedef Set < Struct
         for i in (range 0:u64 (self._mask + 1:u64))
             if (valid-slot? self i)
                 unset-slot self i
-                drop (self._keys @ i)
+                __drop (self._keys @ i)
         self._count = 0:u64
         self._mask = MinMask
         return;
@@ -605,6 +608,9 @@ typedef Set < Struct
         else
             ;
 
+    inline __tobool (self)
+        self._count != 0:usize
+
     inline __countof (self)
         (deref self._count) as usize
 
@@ -612,7 +618,7 @@ typedef Set < Struct
         fn "__drop" (self)
             for i in (range 0:u64 (self._mask + 1:u64))
                 if (valid-slot? self i)
-                    drop (self._keys @ i)
+                    __drop (self._keys @ i)
             free self._valid
             free self._keys
 

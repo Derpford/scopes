@@ -170,6 +170,11 @@ do
         a : i32
         b
 
+    test (A.a.Literal == 0)
+    test (A.a.Name == 'a)
+    test (A.b.Literal == 1)
+    test (A.b.Name == 'b)
+
     dump
         arrayof A
             A.a 0
@@ -198,9 +203,9 @@ do
         do
             dispatch rad
             case A (a b c)
-                assert (a == x)
-                assert (b == y) # fails
-                assert (c == z)
+                test (a == x)
+                test (b == y) # fails
+                test (c == z)
             default;
 
     testval 0x1234 0x5678 0xabcd
@@ -223,3 +228,17 @@ do
             B
             C
 ;
+
+# Option unwrap method
+do
+    let optT = (Option i32)
+    let opt = (optT 1234)
+    let opt2 = (optT)
+    let result =
+        try ('unwrap opt)
+        else 0
+    test (result == 1234)
+    let result =
+        try ('unwrap opt2)
+        else 12345
+    test (result == 12345)

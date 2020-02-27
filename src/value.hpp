@@ -496,6 +496,8 @@ struct Exception : TypedValue {
     T(LK_Try, "try") \
     /* the except block of a try/except construct */ \
     T(LK_Except, "except") \
+    /* the else block of a try/else construct */ \
+    T(LK_ExceptAll, "except-all") \
     /* a break label of a loop */ \
     T(LK_Break, "break") \
     /* a merge label of a branch */ \
@@ -536,6 +538,7 @@ struct LabelTemplate : UntypedValue {
         const ValueRef &value = ValueRef());
     static LabelTemplateRef try_from(const ValueRef &value = ValueRef());
     static LabelTemplateRef except_from(const ValueRef &value = ValueRef());
+    static LabelTemplateRef except_all_from(const ValueRef &value = ValueRef());
 
     Symbol name;
     ValueRef value;

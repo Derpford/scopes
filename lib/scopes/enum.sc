@@ -9,20 +9,51 @@
     Support for defining tagged unions and classical enums through the `enum`
     sugar.
 
+# typechecking-time function
+fn _extract-payload (enum-value extractT)
+    extractT as:= type
+    # don't bother if it's a unit tag
+    if (extractT == Nothing)
+        return (spice-quote none)
+
+    let qcls = ('qualified-typeof enum-value)
+    let cls = ('strip-qualifiers qcls)
+    let payload-cls = ('element@ cls 1)
+    let raw-payload = `(extractvalue enum-value 1)
+    let refer = ('refer? qcls)
+    let ptrT = ('refer->pointer-type qcls)
+
+    let extracted =
+        if refer
+            let ptrET = ('change-element-type ptrT extractT)
+            spice-quote
+                let ptr = (reftoptr raw-payload)
+                let ptr = (bitcast ptr ptrET)
+                ptrtoref ptr
+        else
+            let ptrET = ('change-storage-class
+                ('mutable (pointer.type extractT)) 'Function)
+            spice-quote
+                let ptr = (alloca payload-cls)
+                store raw-payload ptr
+                let ptr = (bitcast ptr ptrET)
+                load ptr
+    let ET = ('strip-qualifiers extractT)
+    let extracted =
+        if (ET < tuple)
+            `(unpack extracted)
+        else extracted
+
 # tagged union / sum type
 typedef Enum
     spice __dispatch (self handlers...)
         let qcls = ('qualified-typeof self)
         let cls = ('strip-qualifiers qcls)
-        let payload-cls = ('element@ cls 1)
         let fields = (('@ cls '__fields) as type)
         let field-types = ('@ cls '__fields__)
         let field-type-args = ('args field-types)
-        let expression =
         let tag = `(extractvalue self 0)
         let sw = (sc_switch_new tag)
-        let refer = ('refer? qcls)
-        let ptrT = ('refer->pointer-type qcls)
         for arg in ('args handlers...)
             let anchor = ('anchor arg)
             let key arg = ('dekey arg)
@@ -33,28 +64,9 @@ typedef Enum
                 let ET = ('key-type ('element@ fields i) unnamed)
                 let field = (('getarg field-types i) as type)
                 let lit = ('@ field 'Literal)
-                let payload = `(extractvalue self 1)
-                let extracted =
-                    if refer
-                        let ptrET = ('change-element-type ptrT ET)
-                        spice-quote
-                            let ptr = (reftoptr payload)
-                            let ptr = (bitcast ptr ptrET)
-                            ptrtoref ptr
-                    else
-                        let ptrET = ('change-storage-class
-                            ('mutable (pointer.type ET)) 'Function)
-                        spice-quote
-                            let ptr = (alloca payload-cls)
-                            store payload ptr
-                            let ptr = (bitcast ptr ptrET)
-                            load ptr
-                let ET = ('strip-qualifiers ET)
-                let extracted =
-                    if (ET < tuple)
-                        `(unpack extracted)
-                    else extracted
-                sc_switch_append_case sw lit ('tag `(arg extracted) anchor)
+                let extractT = ('@ field 'Type)
+                let payload = (_extract-payload self extractT)
+                sc_switch_append_case sw lit ('tag `(arg payload) anchor)
         sw
 
 fn define-field-runtime (T name field-type index-value)
@@ -219,12 +231,12 @@ fn finalize-enum-runtime (T storage)
         for field in field-type-args
             let field = (field as type)
             let name = (('@ field 'Name) as Symbol)
+            check-field-redefinition name T
             let index = (('@ field 'Index) as u64)
             let field-type = (('@ field 'Type) as type)
             if (field-type != Nothing)
                 error "plain enums can't have tagged fields"
             let value = (sc_const_int_new T index)
-            check-field-redefinition name T
             'set-symbol T name value
             using-scope =
                 'bind using-scope name value
@@ -283,14 +295,15 @@ fn finalize-enum-runtime (T storage)
         for i _field in (enumerate field-type-args)
             let field = (_field as type)
             let name = (('@ field 'Name) as Symbol)
+            check-field-redefinition name type
             let index = (('@ field 'Index) as u64)
             let field-type = (('@ field 'Type) as type)
             let index-value = (sc_const_int_new index-type index)
             'set-symbol field 'Literal index-value
-            let value =
+            let constructor =
                 if (field-type == Nothing)
                     spice-quote
-                        inline constructor ()
+                        inline constructor (cls)
                             unit-tag-constructor T index-value payload-type
                     sc_template_set_name constructor name
                     constructor
@@ -298,15 +311,14 @@ fn finalize-enum-runtime (T storage)
                     let TT = ('change-storage-class
                             ('mutable (pointer.type field-type)) 'Function)
                     spice-quote
-                        inline constructor (...)
+                        inline constructor (cls ...)
                             tag-constructor T index-value payload-type field-type TT ...
                     sc_template_set_name constructor name
                     constructor
-
-            check-field-redefinition name Unknown
-            'set-symbol T name value
+            'set-symbol field '__typecall constructor
+            'set-symbol T name field
             using-scope =
-                'bind using-scope name value
+                'bind using-scope name field
     'set-symbol T '__using (deref using-scope)
     ;
 
@@ -425,7 +437,15 @@ sugar dispatch (value)
         default
             error "missing default case"
 
+# wrap for usage outside spices
+spice extract-payload (enum-value extractT)
+    _extract-payload enum-value extractT
+
 run-stage;
+
+typedef UnwrapError : (tuple)
+    inline __typecall (cls)
+        bitcast none this-type
 
 @@ memo
 inline Option (T)
@@ -437,7 +457,8 @@ inline Option (T)
         case (cls : type,)
             this-type.None;
         case (cls : type, value)
-            this-type.Some value
+            # follow same rules as assignment
+            imply value this-type
 
         inline __tobool (self)
             dispatch self
@@ -460,6 +481,13 @@ inline Option (T)
             else (imply? other-cls T)
                 inline (self)
                     this-type.Some self
+
+        inline unwrap (self)
+            if self
+                extract-payload self T
+            else
+                raise (UnwrapError)
+
 
 do
     let enum dispatch Enum Option
