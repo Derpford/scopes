@@ -865,6 +865,8 @@ let
 
 let NullType = (sc_typename_type `"NullType" typename)
 let String = (sc_typename_type `"String" typename)
+let Accessor = (sc_typename_type `"Accessor" typename)
+sc_typename_type_set_storage Accessor (sc_type_storage Closure) typename-flag-plain
 
 let cons =
     spice-macro
@@ -2473,7 +2475,7 @@ let getattr =
                     if (operator-valid? conv)
                         sc_prove `(conv rhs)
                     else
-                        cast-error "can't coerce secondary argument of type " rhsT Symbol
+                        cast-error `"can't coerce secondary argument of type " rhsT Symbol
             label skip-accessor-lookup
                 let sym = (unbox-symbol rhs Symbol)
                 let prop =
@@ -2490,7 +2492,7 @@ let getattr =
             let f =
                 try ('@ lhsT '__getattr)
                 else
-                    unary-op-error "get attribute from" lhsT
+                    unary-op-error `"get attribute from" lhsT
             'tag `(f lhs rhs) ('anchor args)
 
 let drop =
@@ -3404,7 +3406,7 @@ let Closure->Accessor =
             verify-count argc 1 1
             let self = ('getarg args 0)
             if (not ('constant? self))
-                error "Closure must be constant"
+                error `"Closure must be constant"
             let self = (as self Closure)
             let self = (bitcast self Accessor)
             `self
