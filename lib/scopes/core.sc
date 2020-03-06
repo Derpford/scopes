@@ -770,8 +770,15 @@ sc_type_set_symbol type 'raises
 # symbol constructor
 sc_type_set_symbol Symbol '__typecall
     box-pointer
-        inline (cls str)
-            sc_symbol_new str
+        spice-macro
+            fn (args)
+                let argcount = (sc_argcount args)
+                verify-count argcount 2 2
+                let value = (sc_getarg args 1)
+                if (sc_value_is_constant value)
+                    `[(sc_symbol_new (sc_value_globalstring value))]
+                else
+                    `(sc_symbol_new value)
 
 let none? =
     spice-macro
@@ -3693,6 +3700,16 @@ define for
     sugar-block-scope-macro
         fn "expand-for" (topexpr scope)
             let expr next-expr = (decons topexpr)
+            let else-head else-head-anchor = (next-head? next-expr)
+            let has-else? = (else-head == 'else)
+            let else-body next-expr =
+                if has-else?
+                    let at next-expr = (decons next-expr)
+                    let block = (at as list)
+                    let at block = (decons block)
+                    _ block next-expr
+                else
+                    _ '() next-expr
             let expr = (expr as list)
             let head args = (decons expr)
             let it params =
@@ -3737,7 +3754,12 @@ define for
                                     'tag value ('anchor head)
                                 continue;
                             else
-                                break;
+                                spice-unquote
+                                    if has-else?
+                                        let value = (sc_expand (cons do else-body) '() subscope)
+                                        'tag `(break [value]) else-head-anchor
+                                    else
+                                        `(break)
                     next-expr
             return result scope
 
@@ -5438,7 +5460,7 @@ define spice
                         'tag
                             Value
                                 qq
-                                    [verify-count] ([`sc_argcount args])
+                                    [verify-count] [(list sc_argcount args)]
                                         [(? varargs (sub paramcount 1) paramcount)]
                                         [(? varargs -1 paramcount)]
                             anchor
@@ -6944,6 +6966,7 @@ let global =
     gen-allocator-sugar "global"
         spice "global-copy" (T value)
             let val = (extern-new unnamed (T as type) (storage-class = 'Private))
+            let qval = `(ptrtoref val)
             if (('constant? value) and (('typeof value) == Closure))
                 # constructor, build function
                 let f = (value as Closure)
@@ -6953,26 +6976,46 @@ let global =
                         ;
                 let constructor = (sc_typify_template constructor 0 null)
                 sc_global_set_constructor val constructor
-                `(ptrtoref val)
+                qval
             else
                 let init = (sc_prove `(imply value T))
                 if ('pure? init)
                     hide-traceback;
                     sc_global_set_initializer val init
-                spice-quote
-                    store init val
-                    ptrtoref val
+                    qval
+                else
+                    spice-quote
+                        store init val
+                        qval
 
         spice "global-new" (T args...)
             let T = (T as type)
             let val = (extern-new unnamed (T as type) (storage-class = 'Private))
-            let init = (sc_prove `(T args...))
-            if ('pure? init)
-                hide-traceback;
-                sc_global_set_initializer val init
-            spice-quote
-                store init val
-                ptrtoref val
+            let qval = `(ptrtoref val)
+            let pure-args? =
+                for arg in ('args args...)
+                    if (not ('pure? arg))
+                        break false
+                else true
+            if pure-args?
+                # static constructor
+                spice-quote
+                    fn constructor ()
+                        store (T args...) val
+                        ;
+                let constructor = (sc_typify_template constructor 0 null)
+                sc_global_set_constructor val constructor
+                qval
+            else
+                let init = (sc_prove `(T args...))
+                if ('pure? init)
+                    hide-traceback;
+                    sc_global_set_initializer val init
+                    qval
+                else
+                    spice-quote
+                        store init val
+                        qval
 
 run-stage; # 11
 
