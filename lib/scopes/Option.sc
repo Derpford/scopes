@@ -1,5 +1,26 @@
+#
+    The Scopes Compiler Infrastructure
+    This file is distributed under the MIT License.
+    See LICENSE.md for details.
+
+""""Option
+    ======
+
+    Provides a value type that can be undefined
 
 using import .enum
+
+spice option-rimply (other-cls cls T)
+    if (other-cls == Nothing)
+        return `(inline none-converter () (cls.None))
+    other-cls as:= type
+    T as:= type
+    let conv = (imply-converter other-cls T false)
+    if (operator-valid? conv)
+        return `(inline (self) (cls.Some (conv self)))
+    return `()
+
+run-stage;
 
 let extract-payload = Enum.unsafe-extract-payload
 
@@ -9,7 +30,9 @@ typedef UnwrapError : (tuple)
 
 @@ memo
 inline Option (T)
-    enum (.. "Option<" (tostring T) ">")
+    T := (unqualified T)
+
+    enum (.. "<Option " (tostring T) ">")
         None
         Some : T
 
@@ -35,23 +58,16 @@ inline Option (T)
                 __tobool
 
         inline __rimply (other-cls cls)
-            static-if (other-cls == Nothing)
-                inline ()
-                    this-type.None;
-            else (imply? other-cls T)
-                inline (self)
-                    this-type.Some self
+            option-rimply other-cls cls T
 
         inline unwrap (self)
             assert self "unwrapping empty Option failed"
             extract-payload self T
 
         inline try-unwrap (self)
-            if self
-                extract-payload self T
-            else
+            if (not self)
                 raise (UnwrapError)
-
+            extract-payload self T
 
 do
     let Option

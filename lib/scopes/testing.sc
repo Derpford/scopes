@@ -102,7 +102,8 @@ define-sugar-macro test-error
     list do
         list let tmp '=
             list test-function
-                list fn '() cond
+                #list fn '() cond
+                list inline '() cond
         list if tmp
         list 'else
             cons assertion-error!
@@ -247,7 +248,7 @@ typedef One :: (tuple i32 (mutable pointer i32))
     unlet make-binop
 
     fn value (self)
-        dupe (deref (@ (storagecast self) 0))
+        deref (@ (storagecast (view self)) 0)
 
     fn check (self)
         let ref = (@ (@ (storagecast self) 1))

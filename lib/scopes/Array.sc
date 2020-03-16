@@ -45,6 +45,13 @@ typedef+ Array
     inline __as (cls T)
         static-if (T == Generator) array-generator
 
+    inline reverse (self)
+        Generator
+            inline () (deref self._count)
+            inline (i) (i > 0:usize)
+            inline (i) (self @ (i - 1:usize))
+            inline (i) (i - 1:usize)
+
     """"Implements support for pointer casts, to pass the array to C functions
         for example.
     inline __imply (cls T)
@@ -83,21 +90,26 @@ typedef+ Array
         assert (index < self._count) "index out of bounds"
         self._items @ index
 
+    fn last (self)
+        assert (self._count > 0) "empty array has no last element"
+        self._items @ (self._count - 1:usize)
+
+    @@ memo
     inline gen-sort (key)
         let key =
             static-if (none? key)
                 inline (x) x
             else key
 
-        fn siftDown (items start end)
+        fn siftDown (items start end ...)
             loop (root = start)
                 if ((iLeftChild root) > end)
                     break;
                 let child = (iLeftChild root)
                 let v_root = (items @ root)
-                let k_root = (key v_root)
+                let k_root = (key v_root ...)
                 let v_child = (items @ child)
-                let k_child = (key v_child)
+                let k_child = (key v_child ...)
                 inline step2 (iswap v_swap k_swap)
                     if (iswap == root)
                         break;
@@ -107,7 +119,7 @@ typedef+ Array
                     let child1 = (child + 1:i64)
                     if (child1 <= end)
                         let v_child1 = (items @ child1)
-                        let k_child1 = (key v_child1)
+                        let k_child1 = (key v_child1 ...)
                         if (k_swap < k_child1)
                             step2 child1 v_child1 k_child1
                     step2 iswap v_swap k_swap
@@ -116,14 +128,14 @@ typedef+ Array
                 else
                     step1 root v_root k_root
 
-        fn "sort-array" (items count)
+        fn "sort-array" (items count ...)
             let count-1 = (count - 1:i64)
 
             # heapify
             loop (start = (iParent count-1))
                 if (start < 0:i64)
                     break;
-                siftDown items start count-1
+                siftDown items start count-1 ...
                 repeat (start - 1:i64)
 
             loop (end = count-1)
@@ -133,15 +145,15 @@ typedef+ Array
                 let v_end = (items @ end)
                 swap v_0 v_end
                 let end = (end - 1:i64)
-                siftDown items 0:i64 end
+                siftDown items 0:i64 end ...
                 repeat end
 
     """"Sort elements of array `self` from smallest to largest, either using
         the `<` operator supplied by the element type, or by using the key
         supplied by the callable `key`, which is expected to return a comparable
         value for each element value supplied.
-    inline sort (self key)
-        (gen-sort key) (deref self._items) ((deref self._count) as i64)
+    inline sort (self key ...)
+        (gen-sort key) (deref self._items) ((deref self._count) as i64) ...
 
     fn append-slots (self n)
         let idx = (deref self._count)
@@ -176,6 +188,49 @@ typedef+ Array
             let value = (((typeof self) . ElementType) args...)
             assign value (self._items @ idx)
         dest
+
+    """"Insert `value` at `index` into the array `self` and return a reference
+        to the new element. When the `array` is of `GrowingArray` type, this
+        operation will transparently resize the array's storage.
+        This operation offsets the index of each following element by 1.
+        If index is omitted, `insert` operates like `append`.
+    define insert
+        fn _insert (self value index)
+            let count = (deref self._count)
+            assert (index <= count) "insertion index out of bounds"
+            append-slots self 1:usize
+            let items = self._items
+            for i in (rrange index count)
+                assign (dupe (items @ i)) (items @ (i + 1))
+            let slot = (self._items @ index)
+            assign value slot
+            slot
+        inline... insert
+        case (self, value)
+            append self value
+        case (self, value, index)
+            _insert self value index
+
+    """"Remove element with highest index from array `self` and return it.
+    fn pop (self)
+        let &count = self._count
+        assert (&count > 0) "can't pop from empty array"
+        &count -= 1
+        let idx = (deref &count)
+        dupe (deref (self._items @ idx))
+
+    """"Remove element at index from array `self` and return it.
+        This operation offsets the index of each following element by -1.
+    fn remove (self index)
+        let &count = self._count
+        assert (index < &count) "can't pop from empty array"
+        &count -= 1
+        let items = self._items
+        let result =
+            dupe (deref (items @ index))
+        for i in (range index &count)
+            assign (dupe (items @ (i + 1))) (items @ i)
+        result
 
     """"Clear the array and reset its element count to zero. This will drop
         all elements that have been previously contained by the array.
