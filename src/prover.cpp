@@ -3006,8 +3006,14 @@ repeat:
         case FN_Alloca: {
             CHECKARGS(1, 1);
             READ_TYPE_CONST(T);
-            auto op = Alloca::from(T);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            auto ST = strip_qualifiers(T);
+            auto op = Alloca::from(ST);
+            auto vq = try_view(T);
+            if (vq) {
+                op->hack_change_value(view_type(op->get_type(), vq->ids));
+            } else {
+                op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            }
             return TypedValueRef(call.anchor(), op);
         } break;
         case FN_AllocaArray: {
@@ -3015,15 +3021,27 @@ repeat:
             READ_TYPE_CONST(T);
             READ_STORAGETYPEOF(size);
             SCOPES_CHECK_RESULT(verify_integer(size));
+            auto ST = strip_qualifiers(T);
             auto op = Alloca::from(T, _size);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            auto vq = try_view(T);
+            if (vq) {
+                op->hack_change_value(view_type(op->get_type(), vq->ids));
+            } else {
+                op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            }
             return TypedValueRef(call.anchor(), op);
         } break;
         case FN_Malloc: {
             CHECKARGS(1, 1);
             READ_TYPE_CONST(T);
+            auto ST = strip_qualifiers(T);
             auto op = Malloc::from(T);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            auto vq = try_view(T);
+            if (vq) {
+                op->hack_change_value(view_type(op->get_type(), vq->ids));
+            } else {
+                op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            }
             return TypedValueRef(call.anchor(), op);
         } break;
         case FN_MallocArray: {
@@ -3031,8 +3049,14 @@ repeat:
             READ_TYPE_CONST(T);
             READ_STORAGETYPEOF(size);
             SCOPES_CHECK_RESULT(verify_integer(size));
+            auto ST = strip_qualifiers(T);
             auto op = Malloc::from(T, _size);
-            op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            auto vq = try_view(T);
+            if (vq) {
+                op->hack_change_value(view_type(op->get_type(), vq->ids));
+            } else {
+                op->hack_change_value(UNIQUETYPE1(op->get_type()));
+            }
             return TypedValueRef(call.anchor(), op);
         } break;
         case FN_Free: {

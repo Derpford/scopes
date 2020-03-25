@@ -42,6 +42,17 @@ do
     test ((Rc.strong-count c) == 1)
     test ((Rc.weak-count c) == 0)
 
+    let nullweak = ((Weak vec3))
+    test ((Rc.strong-count nullweak) == 0)
+    test ((Rc.weak-count nullweak) == 1)
+    let nullweak2 = ((Weak vec3))
+    test ((Rc.weak-count nullweak) == 1)
+    test ((Rc.weak-count nullweak2) == 1)
+    test-error ('upgrade nullweak2)
+    let nullweak3 = ('clone nullweak)
+    test (nullweak == nullweak2)
+    test (nullweak == nullweak3)
+
     let w = (c as Weak)
 
     test ((Rc.strong-count c) == 1)
@@ -49,8 +60,8 @@ do
     test ((Rc.strong-count w) == 1)
     test ((Rc.weak-count w) == 1)
 
-    let v = ('upgrade w)
-    let p = ('unwrap v)
+    let v = ('force-upgrade w)
+    let p = v
 
     test ((Rc.strong-count c) == 2)
     test ((Rc.weak-count c) == 1)
@@ -58,6 +69,12 @@ do
     test ((Rc.weak-count w) == 1)
     test ((Rc.strong-count p) == 2)
     test ((Rc.weak-count p) == 1)
+
+    let w2 = (Rc.clone w)
+    test ((Rc.strong-count p) == 2)
+    test ((Rc.weak-count p) == 2)
+    test (w == w2)
+    drop w2
 
     print c
     test (c.xz == (vec2 1 3))
@@ -67,7 +84,7 @@ do
     test ((Rc.strong-count w) == 0)
     test ((Rc.weak-count w) == 1)
 
-    test (not ('upgrade w))
+    test-error ('upgrade w)
 
     ;
 
@@ -79,19 +96,16 @@ do
     struct Node
         parent : (Rc this-type)
 
-# using weak and strong references to build a tree
-    this tests if a complex tree of weak and strong references is cleaned up properly
+# using strong references to build a tree
+    this tests if a complex tree of strong references is cleaned up properly
 do
     using import struct
-    using import Option
     using import Array
 
     global deleted_names : (GrowingArray string)
 
     struct DemoNode
         let RcType = (Rc this-type)
-        let WeakType = RcType.WeakType
-        parent : (Option WeakType)
         children : (GrowingArray RcType)
         _name : string
 
@@ -102,7 +116,6 @@ do
         case (parent : RcType, name : string, )
             let self =
                 RcType
-                    parent = parent
                     _name = name
             'append parent.children (Rc.clone self)
             self
@@ -136,6 +149,7 @@ do
 
         let n321 = (DemoNode.new n32 "n321")
         let n322 = (DemoNode.new n32 "n322")
+
         ;
 
     drop root
@@ -154,19 +168,158 @@ do
     test ((deleted_names @ 10) == "n322")
     test ((deleted_names @ 11) == "n33")
 
+# variation of same test to build a tree
+    this tests if a complex tree of strong and weak references is updated correctly
+do
+    using import struct
+    using import Array
+    using import enum
+
+    struct DemoNode
+        let RcType = (Rc this-type)
+        let WeakType = RcType.WeakType
+        parent : WeakType
+        children : (GrowingArray RcType)
+        _name : string
+
+        inline... new
+        case (name : string,)
+            RcType
+                _name = name
+        case (parent : RcType, name : string, )
+            let self =
+                RcType
+                    parent = parent
+                    _name = name
+            'append parent.children (Rc.clone self)
+            self
+
+        inline __== (self other)
+            if ((typeof self) == (typeof other))
+
+        inline __drop (self)
+            print "deleting" ('name self)
+            super-type.__drop self
+
+        inline name (self)
+            self._name
+
+        inline __repr (self)
+            deref self._name
+
+        fn child-index (self child)
+            for i elem in (enumerate self.children)
+                if (elem == child)
+                    return i
+            else
+                assert false "unexpected error in child-index()"
+                unreachable;
+
+        fn unparent (self)
+            let oldparent =
+                try ('upgrade self.parent)
+                else
+                    return (Rc.clone self)
+            let i = ('child-index oldparent self)
+            self.parent = (WeakType)
+            'remove oldparent.children i
+
+        fn... reparent (self newparent)
+            let self = (unparent self)
+            self.parent = newparent
+            'append newparent.children self
+
+    let root = (DemoNode.new "root")
+    do
+        let n1 = (DemoNode.new root "n1")
+        let n2 = (DemoNode.new root "n2")
+        let n3 = (DemoNode.new root "n3")
+
+        let n11 = (DemoNode.new n1 "n11")
+        let n21 = (DemoNode.new n2 "n21")
+        let n22 = (DemoNode.new n2 "n22")
+        let n31 = (DemoNode.new n3 "n31")
+        let n32 = (DemoNode.new n3 "n32")
+        let n33 = (DemoNode.new n3 "n33")
+
+        let n321 = (DemoNode.new n32 "n321")
+        let n322 = (DemoNode.new n32 "n322")
+        ;
+
+    fn... print-tree (node, indent = "")
+        returning void
+        print
+            indent .. ('name node)
+            Rc.strong-count node
+        test ((Rc.strong-count node) == 1)
+        indent := indent .. "  "
+        for child in node.children
+            this-function child indent
+
+    print-tree root
+    do
+        let node = (root . children @ 1 . children @ 0)
+        DemoNode.reparent node root
+        ;
+    print-tree root
+
+    drop root
+    print "ok"
+
 do
     # singleton test
-    T := (Rc i32)
+    T := (Rc One)
 
     fn singleton ()
         using import Option
         global data : (Option T)
         if (not data)
             data = (T 17)
-        deref ('unwrap data)
+        'force-unwrap data
 
     local example : T = (Rc.clone (singleton))
     test (example == (singleton))
     ;
+test ((One.refcount) == 1)
+One.reset-refcount;
+
+
+do
+    using import struct
+
+    # singleton test
+    typedef Inner :: i32
+        inline __typecall (cls v)
+            bitcast v this-type
+
+    struct T
+        a : Inner
+
+    RcT := (Rc T)
+
+    fn singleton ()
+        using import Option
+        global data : (Option RcT)
+        if (not data)
+            data = (RcT (a = (Inner 17)))
+        'force-unwrap data
+
+    let k = (Rc.clone (singleton))
+    local example : RcT = k
+    # error: value of type %1000:<Rc T> must be unique
+
+do
+    using import struct
+
+    struct T
+        a = 0
+
+    RcT := (Rc T)
+
+    let k = (Rc.clone (RcT 17))
+
+    local container : RcT
+    dump (typeof container) (typeof k)
+    container = k
 
 ;
