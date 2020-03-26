@@ -2577,6 +2577,9 @@ let stdout = (sc_global_new 'stdout voidstar 0:u32 unnamed)
 let fputs = (sc_global_new 'fputs (function i32 rawstring voidstar) 0:u32 unnamed)
 let fflush = (sc_global_new 'fflush (function i32 voidstar) 0:u32 unnamed)
 let memcpy = (sc_global_new 'memcpy (function voidstar voidstar voidstar usize) 0:u32 unnamed)
+let memset = (sc_global_new 'memset (function voidstar voidstar i32 usize) 0:u32 unnamed)
+let memcmp = (sc_global_new 'memcmp (function i32 voidstar voidstar usize) 0:u32 unnamed)
+let strlen = (sc_global_new 'strlen (function usize rawstring) 0:u32 unnamed)
 
 run-stage; # 4
 
@@ -7620,6 +7623,103 @@ typedef+ GlobalString
         sc_globalstring_new_from_cstr buf
     case (cls : type, buf : rawstring, size : usize)
         sc_globalstring_new buf size
+
+#-------------------------------------------------------------------------------
+# String
+#-------------------------------------------------------------------------------
+
+typedef+ String
+    inline... __typecall
+    case (cls, size : usize)
+        let bytesize = (add size 1:usize)
+        let ptr = (malloc-array i8 bytesize)
+        memset ptr 0 bytesize
+        bitcast (tupleof size ptr) this-type
+    case (cls, buf : rawstring, size : usize)
+        let self = (this-function cls size)
+        memcpy (extractvalue self 1) buf size
+        self
+    case (cls buf)
+        this-function cls (imply buf rawstring) (strlen buf)
+
+    inline __countof (self)
+        extractvalue (view self) 0
+
+    inline buffer (self)
+        extractvalue (view self) 1
+
+    fn __@ (self index)
+        viewing self
+        let sz = (extractvalue self 0)
+        assert (index < sz) "string index out of bounds"
+        let buf = (extractvalue self 1)
+        ptrtoref (getelementptr (buffer self) index)
+
+    fn copy (self)
+        viewing self
+        let sz = (extractvalue self 0)
+        let buf = (extractvalue self 1)
+        this-type buf sz
+
+    # TODO: don't make a copy but return a slice type
+    fn __lslice (self index)
+        viewing self
+        let sz = (extractvalue self 0)
+        let buf = (extractvalue self 1)
+        let index = (min index sz)
+        this-type buf index
+
+    # TODO: don't make a copy but return a slice type
+    fn __rslice (self index)
+        viewing self
+        let sz = (extractvalue self 0)
+        let buf = (extractvalue self 1)
+        let index = (min index sz)
+        this-type (getelementptr buf (sub sz index)) index
+
+    define __..
+        fn string.. (self other)
+            let sz1 = (extractvalue self 0)
+            let sz2 = (extractvalue other 0)
+            let buf1 = (extractvalue self 1)
+            let buf2 = (extractvalue other 1)
+            let sz = (add sz1 sz2)
+            let result = (this-type sz)
+            let buf = (buffer result)
+            memcpy buf buf1 sz1
+            memcpy (getelementptr buf sz1) buf2 sz2
+            result
+
+        inline "string.." (cls other-cls)
+            static-if (cls == other-cls) string..
+
+    inline __imply (cls other-cls)
+        static-if (other-cls == rawstring) buffer
+
+    inline make-cmp-func (op)
+        fn string-cmp-op (self other)
+            let sz1 = (extractvalue self 0)
+            let sz2 = (extractvalue other 0)
+            let sz = (min sz1 sz2)
+            let buf1 = (extractvalue self 1)
+            let buf2 = (extractvalue other 1)
+            let result = (memcmp buf1 buf2 sz)
+            if (result == 0)
+                return (op sz1 sz2)
+            else
+                return (op result 0)
+
+        inline (cls other-cls)
+            static-if (cls == other-cls) string-cmp-op
+
+    let
+        __== = (make-cmp-func ==)
+        __> = (make-cmp-func >)
+        __>= = (make-cmp-func >=)
+        __< = (make-cmp-func <)
+        __<= = (make-cmp-func <=)
+
+    unlet make-cmp-func
 
 #-------------------------------------------------------------------------------
 # defer

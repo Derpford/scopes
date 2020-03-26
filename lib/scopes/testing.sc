@@ -21,7 +21,7 @@ fn __test-modules (module-dir modules)
                 print "List of failed modules"
                 print "======================"
                 for m in failed-modules
-                    print "*" (m as Symbol as string)
+                    print "*" (m as Symbol as String)
             print;
             print total "tests executed," (total - failed) "succeeded," failed "failed."
             print "done."
@@ -29,7 +29,7 @@ fn __test-modules (module-dir modules)
 
         let module modules = (decons modules)
         let module = (module as Symbol)
-        print "* running" (module as string)
+        print "* running" (module as String)
         print "***********************************************"
         let ok =
             try
