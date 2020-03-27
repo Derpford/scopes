@@ -21,7 +21,7 @@ fn __test-modules (module-dir modules)
                 print "List of failed modules"
                 print "======================"
                 for m in failed-modules
-                    print "*" (m as Symbol as String)
+                    print "*" (m as Symbol as GlobalString)
             print;
             print total "tests executed," (total - failed) "succeeded," failed "failed."
             print "done."
@@ -29,16 +29,16 @@ fn __test-modules (module-dir modules)
 
         let module modules = (decons modules)
         let module = (module as Symbol)
-        print "* running" (module as String)
+        print "* running" (module as GlobalString)
         print "***********************************************"
         let ok =
             try
                 require-from module-dir module
                 true
             except (err)
-                io-write!
+                putstring
                     'format err
-                io-write! "\n"
+                putstring "\n"
                 false
         repeat modules
             if ok
@@ -60,8 +60,6 @@ let __test =
             let expr msg =
                 'getarg args 0
                 'getarg args 1
-            if (('typeof msg) != string)
-                error "string expected as second argument"
             let anchor = ('anchor args)
             'tag `(check-assertion expr anchor msg) anchor
 
@@ -83,7 +81,7 @@ define-sugar-macro test-error
                 f;
             false
         except (err)
-            io-write! "ASSERT OK: "
+            putstring "ASSERT OK: "
             static-if ((typeof err) == Error)
                 print
                     'format err
@@ -95,8 +93,7 @@ define-sugar-macro test-error
     inline assertion-error! (msg)
         let assert-msg =
             .. "error test failed: "
-                if (== (typeof msg) string) msg
-                else (repr msg)
+                tostring msg
         error assert-msg
     let cond body = (decons args)
     let sxcond = cond
@@ -126,7 +123,7 @@ sugar test-compiler-error (args...)
             sc_compile (sc_typify f 0 null) 0:u64
             false
         except (err)
-            io-write! "COMPILER ERROR TEST OK: "
+            putstring "COMPILER ERROR TEST OK: "
             print
                 'format err
             true
@@ -134,15 +131,14 @@ sugar test-compiler-error (args...)
     inline assertion-error! (anchor msg)
         let assert-msg =
             .. "compiler error test failed: "
-                if (== (typeof msg) string) msg
-                else (repr msg)
+                tostring msg
         hide-traceback;
         error@ anchor "while checking test" assert-msg
     let cond body = (decons args...)
     let cond =
         try (sc_expand cond '() sugar-scope)
         except (err)
-            io-write! "COMPILER ERROR TEST OK (while expanding): "
+            putstring "COMPILER ERROR TEST OK (while expanding): "
             print
                 'format err
             return '()
@@ -187,7 +183,7 @@ sugar features (args...)
                 error "-* expected"
             let arg rest = (decons rest)
             if (('typeof arg) == Symbol)
-                let s = (arg as Symbol as string)
+                let s = (arg as Symbol as GlobalString)
                 if ((lslice s 1) == "-")
                     break header rest
             repeat

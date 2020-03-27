@@ -643,24 +643,20 @@ ValueRef wrap_value(const Type *T, const ValueRef &value) {
             auto at = cast<ArrayType>(ST);
             auto ET = at->element_type;
             auto numvals = (int)at->count;
-            if (ET == TYPE_I8) {
-                if (is_refer) {
-                    if (value.isa<GlobalString>())
-                        return value;
-                    auto result = REF(Expression::unscoped_from());
-                    auto PT = native_ro_pointer_type(ET);
-                    auto ptr = REF(CallTemplate::from(g_bitcast, {
-                        REF(CallTemplate::from(g_reftoptr, { value })),
-                        REF(ConstPointer::type_from(PT)) }));
-                    result->append(ptr);
-                    result->append(
-                        REF(CallTemplate::from(g_sc_globalstring_new, {
-                            ptr,
-                            REF(ConstInt::from(TYPE_USize, numvals)) })));
-                    return result;
-                } else {
-                    assert(false && "todo");
-                }
+            if ((ET == TYPE_I8) && is_refer) {
+                if (value.isa<GlobalString>())
+                    return value;
+                auto result = REF(Expression::unscoped_from());
+                auto PT = native_ro_pointer_type(ET);
+                auto ptr = REF(CallTemplate::from(g_bitcast, {
+                    REF(CallTemplate::from(g_reftoptr, { value })),
+                    REF(ConstPointer::type_from(PT)) }));
+                result->append(ptr);
+                result->append(
+                    REF(CallTemplate::from(g_sc_globalstring_new, {
+                        ptr,
+                        REF(ConstInt::from(TYPE_USize, numvals)) })));
+                return result;
             } else {
                 auto result = REF(Expression::unscoped_from());
                 auto numelems = REF(ConstInt::from(TYPE_I32, numvals));

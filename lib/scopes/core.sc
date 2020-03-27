@@ -4055,6 +4055,7 @@ inline slice (value start end)
 
 fn require-from (base-dir name)
     #assert-typeof name Symbol
+    let base-dir = (base-dir as GlobalString)
     let namestr = (dots-to-slashes (name as GlobalString))
     let all-patterns = (patterns-from-namestr base-dir namestr)
     loop (patterns = all-patterns)
