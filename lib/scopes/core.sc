@@ -973,6 +973,7 @@ run-stage; # 3
             values...
 
 'define-symbols Value
+    tostring = sc_value_tostring
     constant? = sc_value_is_constant
     pure? = sc_value_is_pure
     globalstring? =
@@ -2728,11 +2729,17 @@ let print =
             loop (i = 0)
                 if (icmp== i argc)
                     sc_expression_append block `(putstring "\n")
+                    sc_expression_append block `()
                     break block
                 if (icmp>s i 0)
                     sc_expression_append block `(putstring " ")
                 let arg = ('getarg args i)
-                sc_expression_append block `(putstring (tostring arg))
+                let conv = (imply-converter ('typeof arg) rawstring ('constant? arg))
+                let arg =
+                    if (operator-valid? conv) `(conv arg)
+                    else `(tostring arg)
+                sc_expression_append block `(putstring arg)
+                #sc_expression_append block `(putstring (tostring arg))
                 add i 1
 
 let report =
@@ -2991,7 +2998,7 @@ inline infix-op (pred)
                 hide-traceback;
                 error@ ('anchor token) `"while attempting to parse infix token"
                     .. "unexpected token '"
-                        .. (tostring token) "' in infix expression"
+                        .. ('tostring token) "' in infix expression"
         let op-prec = (unpack-infix-op op)
         ? (pred op-prec prec) op `none
 
@@ -3004,7 +3011,7 @@ fn rtl-infix-op-eq (infix-table token prec)
         except (err)
             error@ ('anchor token) `"while attempting to parse infix token"
                 .. "unexpected token '"
-                    .. (tostring token) "' in infix expression"
+                    .. ('tostring token) "' in infix expression"
     let op-prec op-order = (unpack-infix-op op)
     if (== op-order '<)
         ? (== op-prec prec) op `none
@@ -3951,7 +3958,7 @@ fn exec-module (expr eval-scope)
                     wrap-if-not-run-stage (f)
         let path =
             .. ((sc_anchor_path expr-anchor) as GlobalString) ":"
-                tostring `[(sc_anchor_lineno expr-anchor)]
+                ('tostring `[(sc_anchor_lineno expr-anchor)])
         sc_template_set_name wrapf (Symbol path)
         let wrapf = (sc_typify_template wrapf 0 (undef TypeArrayPointer))
         let f =
@@ -4240,8 +4247,8 @@ let __assert =
             inline check-assertion (result anchor msg)
                 if (not result)
                     print anchor
-                        .. "assertion failed: "
-                            tostring msg
+                        "assertion failed:"
+                        msg as rawstring
                     sc_set_signal_abort true
                     sc_abort;
 
@@ -6567,7 +6574,6 @@ define-sugar-scope-macro sugar-eval
         sugar-scope
 
 let
-    io-write! = sc_write
     compiler-version = sc_compiler_version
     default-styler = sc_default_styler
     realpath = sc_realpath
@@ -7661,7 +7667,7 @@ typedef+ String
         let buf = (extractvalue self 1)
         this-type buf sz
 
-    # TODO: don't make a copy but return a slice type
+    # TODO: don't make a copy but return a slice type of same lifetime
     fn __lslice (self index)
         viewing self
         let sz = (extractvalue self 0)
@@ -7669,7 +7675,7 @@ typedef+ String
         let index = (min index sz)
         this-type buf index
 
-    # TODO: don't make a copy but return a slice type
+    # TODO: don't make a copy but return a slice type of same lifetime
     fn __rslice (self index)
         viewing self
         let sz = (extractvalue self 0)
@@ -7722,12 +7728,16 @@ typedef+ String
     unlet make-cmp-func
 
 #-------------------------------------------------------------------------------
+# value printing
+#-------------------------------------------------------------------------------
+
+#-------------------------------------------------------------------------------
 # defer
 #-------------------------------------------------------------------------------
 
 @@ memo
 inline defer-type (f)
-    typedef (.. "<defer " (tostring f) ">") :: (storageof none)
+    typedef (.. "<defer " f ">") :: (storageof none)
         inline __drop (self)
             f;
             ;
@@ -7854,14 +7864,14 @@ fn compiler-version-string ()
         \ compiler-timestamp ")"
 
 fn print-logo ()
-    io-write! "  "; io-write! (default-styler style-string "\\\\\\"); io-write! "\n"
-    io-write! "   "; io-write! (default-styler style-number "\\\\\\   ")
-    io-write! (compiler-version-string); io-write! "\n";
-    io-write! " "; io-write! (default-styler style-comment "///")
-    io-write! (default-styler style-sfxfunction "\\\\\\")
-    io-write! "  http://scopes.rocks"; io-write! "\n";
-    io-write! (default-styler style-comment "///"); io-write! "  "
-    io-write! (default-styler style-function "\\\\\\"); io-write! "\n"
+    putstring "  "; putstring (default-styler style-string "\\\\\\"); putstring "\n"
+    putstring "   "; putstring (default-styler style-number "\\\\\\   ")
+    putstring (compiler-version-string); putstring "\n";
+    putstring " "; putstring (default-styler style-comment "///")
+    putstring (default-styler style-sfxfunction "\\\\\\")
+    putstring "  http://scopes.rocks"; putstring "\n";
+    putstring (default-styler style-comment "///"); putstring "  "
+    putstring (default-styler style-function "\\\\\\"); putstring "\n"
 
 #-------------------------------------------------------------------------------
 
