@@ -3021,7 +3021,7 @@ repeat:
             READ_TYPE_CONST(T);
             READ_STORAGETYPEOF(size);
             SCOPES_CHECK_RESULT(verify_integer(size));
-            auto ST = strip_qualifiers(T);
+            //auto ST = strip_qualifiers(T);
             auto op = Alloca::from(T, _size);
             auto vq = try_view(T);
             if (vq) {
@@ -3034,7 +3034,7 @@ repeat:
         case FN_Malloc: {
             CHECKARGS(1, 1);
             READ_TYPE_CONST(T);
-            auto ST = strip_qualifiers(T);
+            //auto ST = strip_qualifiers(T);
             auto op = Malloc::from(T);
             auto vq = try_view(T);
             if (vq) {
@@ -3049,7 +3049,7 @@ repeat:
             READ_TYPE_CONST(T);
             READ_STORAGETYPEOF(size);
             SCOPES_CHECK_RESULT(verify_integer(size));
-            auto ST = strip_qualifiers(T);
+            //auto ST = strip_qualifiers(T);
             auto op = Malloc::from(T, _size);
             auto vq = try_view(T);
             if (vq) {
