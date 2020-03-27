@@ -478,6 +478,10 @@ SCOPES_LIBEXPORT const sc_type_t *sc_arguments_type_join(const sc_type_t *T1, co
 SCOPES_LIBEXPORT int sc_arguments_type_argcount(sc_type_t *T);
 SCOPES_LIBEXPORT const sc_type_t *sc_arguments_type_getarg(sc_type_t *T, int index);
 
+// str types
+
+SCOPES_LIBEXPORT const sc_type_t *sc_str_type(size_t count);
+
 // qualifiers
 
 SCOPES_LIBEXPORT const sc_type_t *sc_key_type(sc_symbol_t name, const sc_type_t *T);

@@ -17,3 +17,4 @@
 #include "type/image_type.hpp"
 #include "type/sampledimage_type.hpp"
 #include "type/qualify_type.hpp"
+#include "type/str_type.hpp"

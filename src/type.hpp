@@ -170,7 +170,8 @@ typedef std::vector<const Type *> Types;
     T(TYPE_SampledImage, "SampledImage") \
     T(TYPE_CStruct, "CStruct") \
     T(TYPE_CUnion, "CUnion") \
-    T(TYPE_CEnum, "CEnum")
+    T(TYPE_CEnum, "CEnum") \
+    T(TYPE_Str, "str")
 
 #define T(TYPE, TYPENAME) \
     extern const Type *TYPE;

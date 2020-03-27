@@ -27,7 +27,7 @@ sugar struct (name body...)
             error@ default-anchor "while checking default initializer"
                 "initializer must be constant"
         let FT = (typename.type
-            (.. "struct-field<" (name as Symbol as string) ":"
+            (.. "struct-field<" (name as Symbol as GlobalString) ":"
                 (tostring (field-type as type)) ">")
             typename)
         'set-opaque FT

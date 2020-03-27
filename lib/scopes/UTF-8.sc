@@ -141,8 +141,8 @@ spice char (value)
     using import itertools
     let value =
         match ('typeof value)
-        case Symbol (value as Symbol as string)
-        default (value as string)
+        case Symbol (value as Symbol as GlobalString)
+        default (value as GlobalString)
     local result = 0:i32
     local stored = false
     ->> value decoder

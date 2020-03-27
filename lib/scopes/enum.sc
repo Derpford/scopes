@@ -78,7 +78,7 @@ fn define-field-runtime (T name field-type index-value)
         else (extract-integer index-value)
     let next-index = (index-value + 1)
     let FT = (typename.type
-        (.. "enum-field<" (name as Symbol as string) ":"
+        (.. "enum-field<" (name as Symbol as GlobalString) ":"
             (tostring (field-type as type)) "=" (tostring index-value) ">")
         typename)
     'set-opaque FT
@@ -132,7 +132,7 @@ fn build-repr-switch-case (litT self field-types allow-dupes?)
             break;
         let index field = (unpack (load (getelementptr sorted i)))
         let lit = (sc_const_int_new litT index)
-        let name = (('@ field 'Name) as Symbol as string)
+        let name = (('@ field 'Name) as Symbol as GlobalString)
         # accumulate all fields with the same index
         let i name =
             loop (i name = (i + 1) name)
@@ -142,7 +142,7 @@ fn build-repr-switch-case (litT self field-types allow-dupes?)
                 if (index2 == index)
                     if (not allow-dupes?)
                         error "duplicate tags not permitted for tagged unions"
-                    let name2 = (('@ field2 'Name) as Symbol as string)
+                    let name2 = (('@ field2 'Name) as Symbol as GlobalString)
                     repeat (i + 1) (.. name "|" name2)
                 else
                     break i name

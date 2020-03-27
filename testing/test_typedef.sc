@@ -74,7 +74,7 @@ test ('func RuntimeType)
 
 spice make-type (name u v)
     @@ spice-quote
-    typedef [(name as string)]
+    typedef [(name as GlobalString)]
         let x = u
         let y = v
 

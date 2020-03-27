@@ -2,7 +2,7 @@
 using import testing
 
 spice cause-compiler-error (msg)
-    let msg = (msg as string)
+    let msg = (msg as GlobalString)
     if false
         `()
     else

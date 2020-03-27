@@ -154,6 +154,7 @@ project "scopesrt"
         "src/type/function_type.cpp",
         "src/type/typename_type.cpp",
         "src/type/image_type.cpp",
+        "src/type/str_type.cpp",
         "src/type/sampledimage_type.cpp",
         "src/qualifier/unique_qualifiers.cpp",
         "src/qualifier/key_qualifier.cpp",

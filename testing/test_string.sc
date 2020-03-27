@@ -51,7 +51,7 @@ test
 # global strings
 ###################
 
-let str = (sc_global_string_new "te\x00st\n" 6)
+let str = (sc_globalstring_new "te\x00st\n" 6)
 run-stage;
 print (sizeof str)
 let C = (include "stdio.h")

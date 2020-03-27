@@ -2029,6 +2029,14 @@ sc_type_raises_t sc_array_type(const sc_type_t *element_type, size_t count) {
     return convert_result(array_type(element_type, count));
 }
 
+// Str Type
+////////////////////////////////////////////////////////////////////////////////
+
+const sc_type_t *sc_str_type(size_t count) {
+    using namespace scopes;
+    return str_type(count);
+}
+
 // Vector Type
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -2497,6 +2505,8 @@ void init_globals(int argc, char *argv[]) {
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_typename_type_set_opaque, _void, TYPE_Type);
 
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_array_type, TYPE_Type, TYPE_Type, TYPE_USize);
+
+    DEFINE_EXTERN_C_FUNCTION(sc_str_type, TYPE_Type, TYPE_USize);
 
     DEFINE_RAISING_EXTERN_C_FUNCTION(sc_vector_type, TYPE_Type, TYPE_Type, TYPE_USize);
 

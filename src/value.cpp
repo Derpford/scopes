@@ -1670,7 +1670,7 @@ GlobalStringRef GlobalString::from_cstr(const char *_data) {
     if (_data) {
         return globalstrings.from(_data, strlen(_data));
     } else {
-        return GlobalStringRef();
+        return globalstrings.from("", 0);
     }
 }
 

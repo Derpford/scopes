@@ -21,10 +21,10 @@ let dststr =
         # build bytestream
         UTF-8.encoder
         # build string
-        string.collector 256
+        GlobalString.collector 256
 
 print dststr
 test (dststr == srcstr)
 
 
-print (UTF-8.char "?")
+test ((UTF-8.char "?") == 63)

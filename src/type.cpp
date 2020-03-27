@@ -446,6 +446,7 @@ void init_types() {
     DEFINE_OPAQUE_TYPENAME("SampledImage", TYPE_SampledImage, nullptr);
     DEFINE_OPAQUE_TYPENAME("CStruct", TYPE_CStruct, nullptr);
     DEFINE_OPAQUE_TYPENAME("CUnion", TYPE_CUnion, nullptr);
+    DEFINE_OPAQUE_TYPENAME("str", TYPE_Str, nullptr);
 
     TYPE_Bool = integer_type(1, false);
 
