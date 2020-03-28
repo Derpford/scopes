@@ -1635,7 +1635,7 @@ static ConstSet<GlobalString> globalstrings;
 GlobalString::GlobalString(const char *_data, size_t _count)
     : Const(VK_GlobalString,
         refer_type(
-            array_type(TYPE_I8, _count).assert_ok(),
+            str_type(_count),
             PTF_NonWritable,
             SYM_SPIRV_StorageClassPrivate)),
         value(_data, _count) {

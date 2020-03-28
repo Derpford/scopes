@@ -2025,8 +2025,8 @@ fn array->pointer-value (self)
                         `()
     __rimply =
         do
-            # i8 array immutables and references can be converted to GlobalString
-            let array->globalstring =
+            # str can be converted to GlobalString
+            let str->globalstring =
                 spice-macro
                     fn (args)
                         raising Error
@@ -2040,16 +2040,15 @@ fn array->pointer-value (self)
             box-pointer
                 spice-cast-macro
                     inline (T cls)
-                        if ('array? T)
-                            if (ptrcmp== ('element@ T 0) i8)
-                                if (icmp!= ('element-count T) -1)
-                                    return `array->globalstring
+                        if (ptrcmp== ('superof T) str)
+                            if (icmp!= ('element-count T) -1)
+                                return `str->globalstring
                         `()
 
-'set-symbols array
+'set-symbols str
     __.. =
         do
-            let array-concat =
+            let str-concat =
                 spice-macro
                     fn (args)
                         raising Error
@@ -2099,16 +2098,31 @@ fn array->pointer-value (self)
                             ptrtoref (bitcast ptr ptrtype)
             box-pointer
                 spice-cast-macro
-                    fn "array.__.." (cls T)
+                    fn "str.__.." (cls T)
                         # &(array T n) -> @T
-                        if ('array? T)
-                            let clsET = ('element@ cls 0)
-                            let TET = ('element@ T 0)
-                            if (ptrcmp== clsET TET)
-                                if (icmp!= ('element-count cls) -1)
-                                    if (icmp!= ('element-count T) -1)
-                                        return `array-concat
+                        if (ptrcmp== ('superof T) str)
+                            if (icmp!= ('element-count cls) -1)
+                                if (icmp!= ('element-count T) -1)
+                                    return `str-concat
                         `()
+    __imply =
+        do
+            inline strref->pointer (T)
+                inline (self)
+                    bitcast (reftoptr self) T
+            box-pointer
+                spice-cast-macro
+                    fn "str.__imply" (cls T)
+                        # &(array T n) -> @T
+                        if ('refer? cls)
+                            if ('pointer? T)
+                                let clsET = ('element@ cls 0)
+                                let TET = ('element@ T 0)
+                                if (ptrcmp== clsET TET)
+                                    return `(strref->pointer T)
+                        `()
+
+'set-symbols array
     __imply =
         do
             inline arrayref->pointer (T)
@@ -2561,10 +2575,8 @@ let tostring =
             except (err)
                 # string array references are converted directly
                 if ('refer? QT)
-                    if (icmp== ('kind T) type-kind-array)
-                        let ET = ('element@ T 0)
-                        if (ptrcmp== ET i8)
-                            return value
+                    if (ptrcmp== ('superof T) str)
+                        return value
                 if ('constant? value)
                     `[(sc_value_tostring value)]
                 else
