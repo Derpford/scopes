@@ -2067,15 +2067,12 @@ fn array->pointer-value (self)
                         let selfsz = ('element-count selfT)
                         let othersz = ('element-count otherT)
                         let sz = (zext (add selfsz othersz) usize)
-                        let outtype = (sc_array_type ET sz)
+                        let outtype = (sc_str_type sz)
                         let ptrtype = (sc_pointer_type outtype
                             pointer-flag-non-writable 'Function)
                         # concatenated i8 arrays get a zero terminator at the end
-                        let char? = (ptrcmp== ET i8)
-                        let stacksz =
-                            if char? (add sz 1:usize)
-                            else sz
-                        let stacktype = (sc_array_type ET stacksz)
+                        let stacksz = (add sz 1:usize)
+                        let stacktype = (sc_array_type i8 stacksz)
                         let ptr = `(alloca stacktype)
                         spice-quote
                             loop (i = 0)
@@ -2088,13 +2085,9 @@ fn array->pointer-value (self)
                                 store (load (getelementptr otherptr 0 i))
                                     getelementptr ptr 0 (add i selfsz)
                                 add i 1
-                            spice-unquote
-                                if char?
-                                    # set terminator to zero
-                                    spice-quote
-                                        store (nullof ET)
-                                            getelementptr ptr 0 sz
-                                else `()
+                            # set terminator to zero
+                            store 0:i8
+                                getelementptr ptr 0 sz
                             ptrtoref (bitcast ptr ptrtype)
             box-pointer
                 spice-cast-macro
@@ -4884,6 +4877,81 @@ let arrayof = (gen-arrayof sc_array_type insertvalue)
                 `()
 
 #-------------------------------------------------------------------------------
+# str
+#-------------------------------------------------------------------------------
+
+'set-symbols str
+    __== =
+        simple-binary-op
+            spice-macro
+                fn (args)
+                    let self = ('getarg args 0)
+                    let other = ('getarg args 1)
+                    let count = (('element-count ('typeof self)) as usize)
+                    spice-quote
+                        loop (i = 0:usize)
+                            if (icmp== i count)
+                                break true
+                            if (icmp!= (extractvalue self i) (extractvalue other i))
+                                break false
+                            add i 1:usize
+    __countof = __countof-aggregate
+    __@ =
+        inline (self index)
+            extractvalue self index
+    # dynamic array constructor
+    type =
+        inline "str.type" (size)
+            sc_str_type (size as usize)
+    # static array constructor
+    __typecall =
+        spice-macro
+            fn "str.__typecall" (args)
+                let argc = ('argcount args)
+                verify-count argc 1 2
+                raising Error
+                let cls = (('getarg args 0) as type)
+                if (cls == str)
+                    verify-count argc 1 2
+                    let size =
+                        if (argc == 1) -1:u64
+                        else (extract-integer ('getarg args 1))
+                    `[(sc_str_type (size as usize))]
+                else
+                    verify-count argc 1 1
+                    `(nullof cls)
+    __as =
+        do
+            inline str-generator (arr)
+                # arr must be a reference
+                static-branch (&? arr)
+                    inline ()
+                    inline ()
+                        static-error "only str references can be cast to generator"
+                let count = (countof arr)
+                Generator
+                    inline () 0:usize
+                    inline (x) (icmp<u x count)
+                    inline (x) (extractvalue arr x)
+                    inline (x) (add x 1:usize)
+            spice-cast-macro
+                fn "array.__as" (vT T)
+                    if (T == Generator)
+                        return `str-generator
+                    `()
+    __rimply =
+        do
+            inline passthru (self) self
+            spice-cast-macro
+                fn "array.__rimply" (cls T)
+                    if (('element-count T) == -1) # unsized array
+                        if (('kind cls) == type-kind-array)
+                            if (('element@ cls 0) == ('element@ T 0))
+                                return `passthru
+                    `()
+
+
+#-------------------------------------------------------------------------------
 # vectors
 #-------------------------------------------------------------------------------
 
@@ -5375,15 +5443,28 @@ fn gen-sugar-matcher (failfunc expr scope params)
                     if ('variadic? param)
                         error
                             "vararg parameter cannot be typed"
-                    sc_expression_append outexpr
-                        spice-quote
-                            let arg next =
-                                sc_list_decons next
-                            let arg =
-                                if (('constant? arg) and (('typeof arg) == exprT))
-                                    arg as exprT
-                                else
-                                    failfunc;
+                    let arg next =
+                        if ((('typeof exprT) == type) and ((exprT as type) == GlobalString))
+                            spice-quote
+                                let arg next =
+                                    sc_list_decons next
+                                let arg =
+                                    if ('globalstring? arg)
+                                        arg as GlobalString
+                                    else
+                                        failfunc;
+                            _ arg next
+                        else
+                            spice-quote
+                                let arg next =
+                                    sc_list_decons next
+                                let arg =
+                                    if (('constant? arg) and (('typeof arg) == exprT))
+                                        arg as exprT
+                                    else
+                                        failfunc;
+                            _ arg next
+                    sc_expression_append outexpr arg
                     let scope = ('bind scope param arg)
                     repeat (i + 1) rest next varargs scope
                 elseif ((('typeof mid) == Symbol) and ((mid as Symbol) == 'is))
