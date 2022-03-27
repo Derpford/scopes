@@ -9,8 +9,10 @@
 
 #include <assert.h>
 
+#if !defined(_MSC_VER)
 #pragma GCC diagnostic error "-Wunused-result"
 #pragma GCC diagnostic ignored "-Wgnu-statement-expression"
+#endif
 
 namespace scopes {
 
@@ -20,7 +22,15 @@ void print_error(const Error *value);
 
 // use this as return type; together with the attribute and the warning-as-error
 // setting above, we get a good trap for any ignores of result values
+#if defined(_MSC_VER)
+#define SCOPES_RESULT(T) _Check_return_ Result<T>
+#define SCOPES_COMPOUND_STMT(...)  [&](){ __VA_ARGS__; }()
+#define SCOPES_COMPOUND_RETURN return
+#else
 #define SCOPES_RESULT(T) Result<T> __attribute__ ((warn_unused_result))
+#define SCOPES_COMPOUND_STMT(...) ({ __VA_ARGS__; })
+#define SCOPES_COMPOUND_RETURN 
+#endif
 
 // declared at top of function so the subsequent macros all work
 #define SCOPES_RESULT_TYPE(T) \
@@ -28,10 +38,10 @@ void print_error(const Error *value);
     typedef T _result_type;
 
 #define SCOPES_RETURN_ERROR(ERR) return Result<_result_type>::raise(ERR);
-#define SCOPES_ASSERT_CAST(T, EXPR) ({ \
+#define SCOPES_ASSERT_CAST(T, EXPR) SCOPES_COMPOUND_STMT( \
         Result<T> _result = (EXPR); \
-        _result.assert_ok(); \
-    })
+        SCOPES_COMPOUND_RESULT _result.assert_ok(); \
+    )
 
 template<typename T>
 struct Result {

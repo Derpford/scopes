@@ -156,11 +156,11 @@ sc_symbol_raises_t convert_result(const Result<Symbol> &_result) CRESULT;
     SCOPES_C_RETURN_ERROR(_tmp.unsafe_error()); \
 }
 // try to extract a value from a result or return
-#define SCOPES_C_GET_RESULT(EXPR) ({ \
+#define SCOPES_C_GET_RESULT(EXPR) SCOPES_COMPOUND_STMT( \
         auto _result = (EXPR); \
         SCOPES_C_CHECK_OK(_result.ok(), _result.unsafe_error()); \
-        _result.unsafe_extract(); \
-    })
+        SCOPES_COMPOUND_RETURN _result.unsafe_extract(); \
+    )
 
 } // namespace scopes
 

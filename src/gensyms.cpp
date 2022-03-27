@@ -42,7 +42,11 @@ int main(int argc, char *argv[]) {
     cout << endl;
     cout << "namespace scopes {" << endl;
     cout << endl;
+#if defined(_MSC_VER)
+    cout << "enum KnownSymbol : unsigned long long {" << endl;
+#else
     cout << "enum KnownSymbol {" << endl;
+#endif
 
 #define T(sym, name) \
     write_entry( #sym, name);

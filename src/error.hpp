@@ -652,16 +652,16 @@ void stream_error(StyledStream &ss, const Error *value);
     SCOPES_CHECK_OK(_result.ok(), _result.unsafe_error()); \
 }
 // try to extract a value from a result or return
-#define SCOPES_GET_RESULT(EXPR) ({ \
+#define SCOPES_GET_RESULT(EXPR) SCOPES_COMPOUND_STMT( \
         auto _result = (EXPR); \
         SCOPES_CHECK_OK(_result.ok(), _result.unsafe_error()); \
-        _result.unsafe_extract(); \
-    })
-#define SCOPES_CHECK_CAST(T, EXPR) ({ \
+        SCOPES_COMPOUND_RETURN _result.unsafe_extract(); \
+    )
+#define SCOPES_CHECK_CAST(T, EXPR) SCOPES_COMPOUND_STMT( \
         Result<T> _result = (EXPR); \
         SCOPES_CHECK_OK(_result.ok(), _result.unsafe_error()); \
-        _result.unsafe_extract(); \
-    })
+        SCOPES_COMPOUND_RETURN _result.unsafe_extract(); \
+    )
 
 } // namespace scopes
 

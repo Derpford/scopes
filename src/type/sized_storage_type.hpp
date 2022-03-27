@@ -21,7 +21,11 @@ struct CompositeType : Type {
 
 //------------------------------------------------------------------------------
 
+#if defined(_MSC_VER)
+enum : unsigned long long {
+#else
 enum {
+#endif
     UNSIZED_COUNT = -1ull,
 };
 
