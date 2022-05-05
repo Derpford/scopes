@@ -3107,6 +3107,15 @@ struct LLVMIRGenerator {
 
         replace_debug_types();
 #endif
+        
+        auto debugmetaconst = LLVMValueAsMetadata(LLVMConstInt(i32T, LLVMDebugMetadataVersion(), false));
+        LLVMAddModuleFlag(module, LLVMModuleFlagBehaviorWarning, "Debug Info Version", sizeof("Debug Info Version"), debugmetaconst);
+
+#ifdef _MSC_VER
+        auto metaconst = LLVMValueAsMetadata(LLVMConstInt(i32T, 1, false));
+        LLVMAddModuleFlag(module, LLVMModuleFlagBehaviorWarning, "CodeView", sizeof("CodeView"), metaconst);
+        LLVMAddModuleFlag(module, LLVMModuleFlagBehaviorWarning, "CodeViewGHash", sizeof("CodeViewGHash"), metaconst);
+#endif
 
         LLVMDisposeBuilder(builder);
         LLVMDIBuilderFinalize(di_builder);
@@ -3115,7 +3124,7 @@ struct LLVMIRGenerator {
 #if SCOPES_DEBUG_CODEGEN
         LLVMDumpModule(module);
 #endif
-#ifndef SCOPES_WIN32
+//#ifndef SCOPES_WIN32
         char *errmsg = NULL;
         if (LLVMVerifyModule(module,
             LLVMReturnStatusAction, &errmsg)) {
@@ -3123,7 +3132,7 @@ struct LLVMIRGenerator {
             SCOPES_ERROR(CGenBackendFailed, errmsg);
         }
         LLVMDisposeMessage(errmsg);
-#endif
+//#endif
         return {};
     }
 
