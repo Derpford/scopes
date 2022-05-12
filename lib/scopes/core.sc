@@ -3424,6 +3424,22 @@ let modules = (sc_global_new 'modules Scope 0:u32 'Private)
 sc_global_set_initializer modules `[(Scope)]
 let modules = `(ptrtoref modules)
 
+# fn split-flags (flags)
+#     """"Splits a string at each space, returning the two pieces.
+#         Used later to split a string into an array.
+#     local res : (Array string)
+#     local j = 0
+#     for i c in (enumerate flags)
+#         if (c == " ")
+#             let it = (slice flags j i)
+#             'append res it
+#             j = i
+
+#     return res
+
+# (dump (split-flags "foo bar"))
+
+
 """"`__env` is a special symbol table of type `Scope` describing the module
     environment. `import`, `include` and `shared-library` depend on its
     contents. Modules imported with `import` inherit the environment presently
