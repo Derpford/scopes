@@ -3424,22 +3424,6 @@ let modules = (sc_global_new 'modules Scope 0:u32 'Private)
 sc_global_set_initializer modules `[(Scope)]
 let modules = `(ptrtoref modules)
 
-# fn split-flags (flags)
-#     """"Splits a string at each space, returning the two pieces.
-#         Used later to split a string into an array.
-#     local res : (Array string)
-#     local j = 0
-#     for i c in (enumerate flags)
-#         if (c == " ")
-#             let it = (slice flags j i)
-#             'append res it
-#             j = i
-
-#     return res
-
-# (dump (split-flags "foo bar"))
-
-
 """"`__env` is a special symbol table of type `Scope` describing the module
     environment. `import`, `include` and `shared-library` depend on its
     contents. Modules imported with `import` inherit the environment presently
@@ -8851,6 +8835,31 @@ fn print-logo ()
 
 set-global-scope! (__this-scope)
 
+fn split-flags (flags)
+    """"Splits a string at each space, returning a list.
+        Used to turn buildInputs into something that can be appended
+        to module-search-path.
+    local res = (list)
+    local j = 0
+    for i c in (enumerate flags)
+        if (c == (@ " " 0))
+            let it = (slice (flags as string) j i)
+            let p1 = (it .. str"/lib/scopes/packages/?.sc")
+            let p2 = (it .. str"/lib/scopes/packages/?/init.sc")
+            res = (cons p1 res)
+            res = (cons p2 res)
+            j = (i + 1) # skip the space
+    # don't forget the last one!
+    let it  = (slice (flags as string) j (countof flags))
+    let p1 = (it .. str"/lib/scopes/packages/?.sc")
+    let p2 = (it .. str"/lib/scopes/packages/?/init.sc")
+    res = (cons p1 res)
+    res = (cons p2 res)
+
+    return res
+
+# (print (split-flags "foo bar baz"))
+
 #-------------------------------------------------------------------------------
 # main
 #-------------------------------------------------------------------------------
@@ -8875,6 +8884,10 @@ fn set-project-dir (env path set-paths?)
         'bind-symbols (global-scope)
             project-dir = path
     if set-paths?
+        #let nix-env-modules = (sc_getenv "buildInputs")
+        # let p1 = (.. path str"/lib/scopes/packages/?.sc")
+        # let p2 = (.. path str"/lib/scopes/packages/?/init.sc")
+        # let path-list = (cons p1 (cons p2 (list)))
         # add default paths to package
         'bind-symbols env
             module-search-path =
