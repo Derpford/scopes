@@ -8885,15 +8885,10 @@ fn set-project-dir (env path set-paths?)
             project-dir = path
     if set-paths?
         let nix-env-modules = (sc_getenv "BuildInputs")
-        print nix-env-modules
         let p1 = (.. path str"/lib/scopes/packages/?.sc")
-        print p1
         let p2 = (.. path str"/lib/scopes/packages/?/init.sc")
-        print p2
         local path-list = (cons p1 (cons p2 (list)))
-        print path-list
         if (nix-env-modules != "") (path-list = (cons nix-env-modules path-list)) # If nix-env-modules isn't empty, this sticks it in the front
-        print path-list
         # add default paths to package
         'bind-symbols env
             module-search-path =
