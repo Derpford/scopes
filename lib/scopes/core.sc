@@ -8835,28 +8835,33 @@ fn print-logo ()
 
 set-global-scope! (__this-scope)
 
-fn split-flags (flags)
+fn split-paths (paths)
     """"Splits a string at each space, returning a list.
         Used to turn buildInputs into something that can be appended
         to module-search-path.
     local res = (list)
     local j = 0
-    for i c in (enumerate flags)
+    for i c in (enumerate paths)
         if (c == (@ " " 0))
-            let it = (slice (flags as string) j i)
-            let p1 = (it .. str"/lib/scopes/packages/?.sc")
-            let p2 = (it .. str"/lib/scopes/packages/?/init.sc")
-            res = (cons p1 res)
-            res = (cons p2 res)
+            let it = (slice (paths as string) j i)
+            res = (cons it res)
             j = (i + 1) # skip the space
     # don't forget the last one!
-    let it  = (slice (flags as string) j (countof flags))
-    let p1 = (it .. str"/lib/scopes/packages/?.sc")
-    let p2 = (it .. str"/lib/scopes/packages/?/init.sc")
-    res = (cons p1 res)
-    res = (cons p2 res)
-
+    let it  = (slice (paths as string) j (countof paths))
+    res = (cons it res)
     return res
+
+fn path-map (plist path)
+    """"Takes a list of paths `plist`, and makes a new list. for each item in `plist`:
+        1. Appends `/lib/scopes/packages/?.sc` to the item and adds that to the new list
+        2. Appends `/lib/scopes/packages/?/init.sc` to the item and adds that to the new list
+        It does the same with `path`.
+        Then it returns the new list. Second step before creating module-search-path.
+    local res = (cons (path .. str"/lib/scopes/packages/?.sc") (path .. str"/lib/scopes/packages/?/init.sc") (list))
+    for i in plist
+        res = (cons ((i as string) .. str"/lib/scopes/packages/?.sc") ((i as string) .. str"/lib/scopes/packages/?/init.sc") res)
+    return res
+
 
 #-------------------------------------------------------------------------------
 # main
@@ -8883,11 +8888,7 @@ fn set-project-dir (env path set-paths?)
             project-dir = path
     if set-paths?
         let nix-env-modules = (sc_getenv "BuildInputs")
-        let p1 = (.. path str"/lib/scopes/packages/?.sc")
-        let p2 = (.. path str"/lib/scopes/packages/?/init.sc")
-        local path-list = (cons p1 (cons p2 (list)))
-        if (nix-env-modules != "") (path-list = (.. (split-flags nix-env-modules) path-list)) # If nix-env-modules isn't empty, this sticks it in the front
-        # add default paths to package
+        let path-list = (path-map (split-paths nix-env-modules) path) # This handles all of the path construction.
         'bind-symbols env
             module-search-path =
                 ..
