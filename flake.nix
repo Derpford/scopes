@@ -31,6 +31,26 @@
             '';
           };
 
+          buildScopesLibrary = { scopes, name, src, dontUnpack ? false }: 
+            # Put source files into $out/lib/scopes/packages.
+            pkgs.stdenv.mkDerivation {
+
+              dontUnpack = dontUnpack;
+
+              name = "scopes-" + name;
+
+              nativeBuildInputs = [
+                scopes
+              ];
+
+              installPhase = ''
+              # All this has to do is move the contents of the current dir into 
+              # /lib/scopes/packages.
+              mkdir -p $out/lib/scopes/packages
+              cp -r $src/* $out/lib/scopes/packages
+              '';
+            };
+
           scopes = pkgs.stdenv.mkDerivation {
             pname = "scopes";
             version = "0.18";
